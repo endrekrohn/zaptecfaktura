@@ -5,6 +5,7 @@ import zipfile
 from datetime import datetime
 
 import httpx
+import polars as pl
 from fastapi import Depends, FastAPI, Form, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.security import OAuth2PasswordRequestForm
@@ -213,6 +214,7 @@ async def export_all_usage(
 
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+        df_data: list[dict] = []
         for installation in installations:
             installation_id = installation.get("Id")
             installation_name = installation.get("Name")
@@ -226,8 +228,21 @@ async def export_all_usage(
             except Exception:
                 continue
 
-            total_kwh = sum(session.get("Energy", 0) for session in sessions_data)
-            total_cost = total_kwh * nok_per_kwh
+            total_kwh = round(
+                sum(session.get("Energy", 0) for session in sessions_data), 3
+            )
+            total_cost = round(total_kwh * nok_per_kwh, 2)
+            filename = f"{year}_{month:02d}_grunnlag_{make_safe_filename(installation_name)}.pdf"
+
+            df_data.append(
+                {
+                    "installasjons_navn": installation_name,
+                    "installasjons_id": installation_id,
+                    "filnavn": filename,
+                    "sum_kwh": total_kwh,
+                    "sum_kroner": total_cost,
+                }
+            )
 
             pdf_bytes = generate_invoice_pdf(
                 installation_id,
@@ -241,7 +256,7 @@ async def export_all_usage(
             )
             pdfs.append(
                 {
-                    "filename": f"{year}_{month:02d}_grunnlag_{make_safe_filename(installation_name)}.pdf",
+                    "filename": filename,
                     "bytes": pdf_bytes,
                 }
             )
@@ -249,6 +264,21 @@ async def export_all_usage(
                 f"{year}_{month:02d}_grunnlag_{make_safe_filename(installation_name)}.pdf",
                 pdf_bytes,
             )
+        df = pl.DataFrame(df_data)
+        excel_buffer = io.BytesIO()
+        df.write_excel(excel_buffer)
+        excel_buffer.seek(0)
+        csv_buffer = io.BytesIO()
+        df.write_csv(csv_buffer)
+        csv_buffer.seek(0)
+
+        zip_file.writestr(
+            f"{year}_{month:02d}_grunnlag_oversikt.xlsx", excel_buffer.getvalue()
+        )
+        zip_file.writestr(
+            f"{year}_{month:02d}_grunnlag_oversikt.csv", csv_buffer.getvalue()
+        )
+
     zip_buffer.seek(0)
     return StreamingResponse(
         zip_buffer,
