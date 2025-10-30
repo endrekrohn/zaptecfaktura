@@ -1,0 +1,18 @@
+{% extends "base.html" %} {% block content %}
+<h2>Logg inn med Zaptec-innloggingsdetaljer</h2>
+{% if error %}
+<p class="error">{{ error }}</p>
+{% endif %}
+<form method="post" action="/login">
+    <div>
+        <label>E-post:</label><br />
+        <input type="text" name="username" required />
+    </div>
+    <div>
+        <label>Passord:</label><br />
+        <input type="password" name="password" required />
+    </div>
+    <br />
+    <button type="submit">Logg inn</button>
+</form>
+{% endblock %}
