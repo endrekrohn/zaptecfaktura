@@ -1,0 +1,210 @@
+{% extends "base.html" %} {% block content %}
+
+{% if error %}
+<p class="error">{{ error }}</p>
+{% endif %}
+
+<style>
+    .container {
+        max-width: 800px;
+        margin: 0 auto;
+        background-color: #f8f9fa;
+        border-radius: 8px;
+        padding: 20px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .formgrid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+    }
+
+    .formgrid3 {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 20px;
+    }
+
+    .form-section {
+        background-color: #f8f9fa;
+        border-radius: 8px;
+        padding: 20px;
+        margin: 20px 0;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .form-group {
+        margin-bottom: 15px;
+    }
+
+    .form-group label {
+        display: block;
+        margin-bottom: 5px;
+        font-weight: bold;
+    }
+
+    .form-group input,
+    .form-group select {
+        width: 100%;
+        padding: 12px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 16px;
+        box-sizing: border-box;
+        transition: border-color 0.3s;
+    }
+
+    .form-group input:focus,
+    .form-group select:focus {
+        outline: none;
+        border-color: #007bff;
+        box-shadow: 0 0 5px rgba(0, 123, 255, 0.3);
+    }
+
+    .result-container {
+        background-color: #e9f7fe;
+        border-left: 4px solid #007bff;
+        padding: 15px;
+        margin: 20px 0;
+        border-radius: 4px;
+    }
+
+    .result-container h3 {
+        margin-top: 0;
+        color: #007bff;
+    }
+
+    .result-value {
+        font-size: 24px;
+        font-weight: bold;
+        color: #007bff;
+    }
+
+    .submit-btn {
+        background-color: #007bff;
+        color: white;
+        padding: 12px 24px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 16px;
+        transition: background-color 0.3s;
+    }
+
+    .submit-btn:hover {
+        background-color: #003e80;
+    }
+
+    .logout-link {
+        display: inline-block;
+        margin-left: 10px;
+        padding: 12px 24px;
+        background-color: #6c757d;
+        color: white;
+        text-decoration: none;
+        border-radius: 4px;
+        transition: background-color 0.3s;
+    }
+
+    .logout-link:hover {
+        background-color: #545b62;
+    }
+
+    .error {
+        background-color: #f8d7da;
+        color: #721c24;
+        padding: 10px;
+        border-radius: 4px;
+        margin: 10px 0;
+        border: 1px solid #f5c6cb;
+    }
+</style>
+
+<section class="container">
+
+    <h2>Eksporter</h2>
+
+
+
+    <form class="formgrid3">
+        <div class="form-group">
+            <label for="totalAmount">Sum på faktura (NOK):</label>
+            <input type="number" id="totalAmount" name="totalAmount" step="0.01" min="0">
+        </div>
+
+        <div class="form-group">
+            <label for="totalConsumption">Totalt forbruk (kWh):</label>
+            <input type="number" id="totalConsumption" name="totalConsumption" step="0.01" min="0">
+        </div>
+
+        <div class="form-group">
+            <label for="markup">Påslag:</label>
+            <input type="number" id="markup" name="markup" step="0.01" min="0" value="1.25">
+        </div>
+    </form>
+
+
+    <form method="post" action="/exportall" class="form-container">
+        <div class="result-container">
+            <h3>Utregnet strømpris:</h3>
+            <p>Pris per kWh med påslag: <span class="result-value" id="result">0.00</span> kr/kWh</p>
+        </div>
+        <input type="hidden" id="nok_per_kwh" name="nok_per_kwh" value="0.00" required />
+        <div class="formgrid">
+            <div class="form-group">
+                <label for="year">År:</label>
+                <input type="number" id="year" name="year" min="2000" max="2100" value="{{ year if year else '' }}"
+                    required />
+            </div>
+            <div class="form-group">
+                <label for="month">Måned:</label>
+                <select id="month" name="month" required>
+                    <option value="">Velg måned</option>
+                    <option value="1">Januar</option>
+                    <option value="2">Februar</option>
+                    <option value="3">Mars</option>
+                    <option value="4">April</option>
+                    <option value="5">Mai</option>
+                    <option value="6">Juni</option>
+                    <option value="7">Juli</option>
+                    <option value="8">August</option>
+                    <option value="9">September</option>
+                    <option value="10">Oktober</option>
+                    <option value="11">November</option>
+                    <option value="12">Desember</option>
+                </select>
+            </div>
+        </div>
+
+        <button type="submit" class="submit-btn">Eksporter bruk</button>
+        <a href="/logout" class="logout-link">Logg out</a>
+    </form>
+
+
+</section>
+
+<script>
+    function calculatePrice() {
+        const totalAmount = parseFloat(document.getElementById('totalAmount').value) || 0;
+        const totalConsumption = parseFloat(document.getElementById('totalConsumption').value) || 0;
+        const markup = parseFloat(document.getElementById('markup').value) || 1.0;
+
+        let pricePerKwh = 0;
+        if (totalConsumption > 0) {
+            pricePerKwh = (totalAmount / totalConsumption) * markup;
+        }
+
+        document.getElementById('result').textContent = pricePerKwh.toFixed(2);
+        document.getElementById('nok_per_kwh').value = pricePerKwh.toFixed(2);
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        const inputs = ['totalAmount', 'totalConsumption', 'markup'];
+        inputs.forEach(inputId => {
+            document.getElementById(inputId).addEventListener('input', calculatePrice);
+        });
+    });
+</script>
+
+{% endblock %}
