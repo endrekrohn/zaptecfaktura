@@ -1,78 +1,231 @@
 {% extends "base.html" %} {% block content %}
 <style>
+    body {
+        margin: 0;
+        padding: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    }
+
     .login-container {
         max-width: 400px;
-        margin: 50px auto;
-        padding: 30px;
-        background-color: #f8f9fa;
-        border-radius: 8px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        font-family: Arial, sans-serif;
+        margin: 20px;
+        padding: 40px 30px;
+        background: rgba(255, 255, 255, 0.9);
+        border-radius: 15px;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+        backdrop-filter: blur(10px);
+        animation: fadeInUp 0.6s ease-out;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .login-container::before {
+        content: "";
+        position: absolute;
+        top: -50%;
+        left: -50%;
+        width: 200%;
+        height: 200%;
+        background: radial-gradient(circle,
+                rgba(255, 255, 255, 0.1) 0%,
+                rgba(255, 255, 255, 0) 70%);
+        z-index: -1;
     }
 
     .login-container h2 {
         text-align: center;
         margin-bottom: 30px;
-        padding-bottom: 15px;
+        padding-bottom: 20px;
+        color: #333;
+        font-weight: 600;
+        position: relative;
+    }
+
+    .login-container h2::after {
+        content: "";
+        position: absolute;
+        bottom: 0;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 80px;
+        height: 4px;
+        background: linear-gradient(90deg, #667eea, #764ba2);
+        border-radius: 2px;
     }
 
     .form-group {
-        margin-bottom: 20px;
+        margin-bottom: 25px;
+        position: relative;
     }
 
     .form-group label {
         display: block;
         margin-bottom: 8px;
-        font-weight: bold;
+        font-weight: 500;
+        color: #555;
+        transition: all 0.3s ease;
     }
 
     .form-group input {
         width: 100%;
-        padding: 12px;
-        border: 1px solid #ddd;
-        border-radius: 4px;
+        padding: 15px;
+        border: 2px solid #e1e5e9;
+        border-radius: 8px;
         font-size: 16px;
         box-sizing: border-box;
-        transition: border-color 0.3s;
+        transition: all 0.3s ease;
+        background: #f8fafc;
+        color: #333;
     }
 
     .form-group input:focus {
         outline: none;
-        border-color: #007bff;
-        box-shadow: 0 0 5px rgba(0, 123, 255, 0.3);
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        transform: translateY(-2px);
+    }
+
+    .form-group input::placeholder {
+        color: #aaa;
     }
 
     .submit-btn {
         width: 100%;
-        background-color: #007bff;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
-        padding: 12px;
+        padding: 15px;
         border: none;
-        border-radius: 4px;
+        border-radius: 8px;
         cursor: pointer;
         font-size: 16px;
-        font-weight: bold;
-        transition: background-color 0.3s;
+        font-weight: 600;
+        transition: all 0.3s ease;
         display: block;
+        position: relative;
+        overflow: hidden;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+    }
+
+    .submit-btn::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg,
+                transparent,
+                rgba(255, 255, 255, 0.2),
+                transparent);
+        transition: left 0.5s;
     }
 
     .submit-btn:hover {
-        background-color: #0056b3;
+        transform: translateY(-3px);
+        box-shadow: 0 10px 25px -5px rgba(102, 126, 234, 0.4);
+    }
+
+    .submit-btn:hover::before {
+        left: 100%;
     }
 
     .error {
-        background-color: #f8d7da;
-        color: #721c24;
-        padding: 10px;
-        border-radius: 4px;
-        margin: 15px 0;
-        border: 1px solid #f5c6cb;
+        background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+        color: white;
+        padding: 15px;
+        border-radius: 8px;
+        margin: 20px 0;
         text-align: center;
+        animation: shake 0.5s ease-in-out;
+        border: none;
+    }
+
+    .flashy-icon {
+        display: block;
+        text-align: center;
+        margin-bottom: 20px;
+        font-size: 3rem;
+        animation: pulse 2s infinite;
+    }
+
+    .login-header {
+        text-align: center;
+        margin-bottom: 30px;
+    }
+
+    .login-header h1 {
+        color: #333;
+        font-size: 2.5rem;
+        margin-bottom: 10px;
+        background: linear-gradient(90deg, #667eea, #764ba2);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+
+    .login-header p {
+        color: #666;
+        font-size: 1rem;
+    }
+
+    @keyframes fadeInUp {
+        from {
+            opacity: 0;
+            transform: translateY(30px);
+        }
+
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    @keyframes shake {
+
+        0%,
+        100% {
+            transform: translateX(0);
+        }
+
+        20%,
+        60% {
+            transform: translateX(-5px);
+        }
+
+        40%,
+        80% {
+            transform: translateX(5px);
+        }
+    }
+
+    @keyframes pulse {
+        0% {
+            transform: scale(1);
+        }
+
+        50% {
+            transform: scale(1.1);
+        }
+
+        100% {
+            transform: scale(1);
+        }
     }
 </style>
 
 <div class="login-container">
-    <h2>Logg inn med Zaptec-innloggingsdetaljer</h2>
+    <div class="login-header">
+        <h1>⚡ Zaptec</h1>
+        <p>Logg inn for å fortsette</p>
+    </div>
+
+    <div class="flashy-icon">🔒</div>
 
     {% if error %}
     <p class="error">{{ error }}</p>
@@ -81,11 +234,11 @@
     <form method="post" action="/login">
         <div class="form-group">
             <label>E-post:</label>
-            <input type="text" name="username" required />
+            <input type="text" name="username" required placeholder="Skriv inn e-postadresse..." />
         </div>
         <div class="form-group">
             <label>Passord:</label>
-            <input type="password" name="password" required />
+            <input type="password" name="password" required placeholder="Skriv inn passord..." />
         </div>
         <button type="submit" class="submit-btn">Logg inn</button>
     </form>

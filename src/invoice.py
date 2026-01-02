@@ -55,53 +55,22 @@ def generate_invoice_pdf(
     elements = []
 
     title = Paragraph(
-        f"Fakturagrunnlag ({installation_name or installation_id})", title_style
+        f"Fakturagrunnlag elbillader {installation_name or installation_id}",
+        title_style,
     )
     elements.append(title)
 
-    period = f"For periode {year}-{month:02d} er den gjennomsnittlige strømprisne inkludert påslag satt til {nok_per_kwh:.2f} NOK per kWh."
+    period = f"For periode {year}-{month:02d} er den gjennomsnittlige strømprisene inkludert påslag satt til {nok_per_kwh:.2f} NOK per kWh."
     elements.append(Paragraph(period, styles["Normal"]))
 
     elements.append(Spacer(1, 20))
 
-    line_items = [["Beskrivelse", "Antall", "Pris", "Rabatt", "MVA", "Beløp"]]
+    line_items = [["Beskrivelse", "Antall", "Pris", "Beløp ekslusiv MVA"]]
     line_items.append(
         [
             f"Strømforbruk {year}-{month:02d}",
             f"{total_kwh:.3f}",
             f"{nok_per_kwh:.2f}",
-            f"{0:.0f} %",
-            f"{0:.0f} %",
-            f"{format_norwegian_accounting(total_cost)} kr",
-        ]
-    )
-    line_items.append(
-        [
-            "",
-            "",
-            "",
-            "",
-            "Nettobeløp",
-            f"{format_norwegian_accounting(total_cost)} kr",
-        ]
-    )
-    line_items.append(
-        [
-            "",
-            "",
-            "",
-            "",
-            "Merverdiavgift",
-            f"{format_norwegian_accounting(0)} kr",
-        ]
-    )
-    line_items.append(
-        [
-            "",
-            "",
-            "",
-            "",
-            "Beløp å betale",
             f"{format_norwegian_accounting(total_cost)} kr",
         ]
     )
@@ -109,11 +78,9 @@ def generate_invoice_pdf(
         line_items,
         colWidths=[
             content_width * (4 / 12),
-            content_width * (1 / 12),
-            content_width * (1 / 6),
-            content_width * (1 / 12),
-            content_width * (1 / 12),
-            content_width * (3 / 12),
+            content_width * (2 / 12),
+            content_width * (2 / 12),
+            content_width * (4 / 12),
         ],
     )
     line_table.setStyle(
@@ -124,9 +91,8 @@ def generate_invoice_pdf(
                 ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
                 ("FONTSIZE", (0, 0), (-1, -1), 10),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-                ("LINEABOVE", (0, -3), (-1, -3), 1, colors.black),
-                ("LINEABOVE", (-3, -1), (-1, -1), 1, colors.black),
-                ("LINEBELOW", (-3, -1), (-1, -1), 1.5, colors.black),
+                ("LINEABOVE", (0, -1), (-1, -1), 1, colors.black),
+                ("LINEBELOW", (0, -1), (-1, -1), 1, colors.black),
                 (
                     "TEXTCOLOR",
                     (0, -1),
@@ -137,7 +103,7 @@ def generate_invoice_pdf(
                     "FONTNAME",
                     (0, -1),
                     (-1, -1),
-                    "Helvetica-Bold",
+                    "Helvetica",
                 ),
                 ("BOTTOMPADDING", (0, -1), (-1, -1), 5),
                 (

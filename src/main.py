@@ -38,7 +38,9 @@ async def auth_middleware(request: Request, call_next):
 
     session_data = get_session(session_id)
     if not session_data:
-        return RedirectResponse(url="/login", status_code=307)
+        response = RedirectResponse(url="/login", status_code=307)
+        response.delete_cookie("session_id")
+        return response
 
     response = await call_next(request)
     return response

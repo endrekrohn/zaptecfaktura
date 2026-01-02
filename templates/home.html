@@ -129,7 +129,7 @@
 
     <form class="formgrid3">
         <div class="form-group">
-            <label for="totalAmount">Sum på faktura (NOK):</label>
+            <label for="totalAmount">Sum på faktura eksl. mva (NOK):</label>
             <input type="number" id="totalAmount" name="totalAmount" step="0.01" min="0">
         </div>
 
@@ -148,7 +148,7 @@
     <form method="post" action="/exportall" class="form-container">
         <div class="result-container">
             <h3>Utregnet strømpris:</h3>
-            <p>Pris per kWh med påslag: <span class="result-value" id="result">0.00</span> kr/kWh</p>
+            <p>Pris per kWh med påslag: <span class="result-value" id="result">0.00</span> kr/kWh (ekslusiv mva)</p>
         </div>
         <input type="hidden" id="nok_per_kwh" name="nok_per_kwh" value="0.00" required />
         <div class="formgrid">
