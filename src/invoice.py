@@ -60,7 +60,11 @@ def generate_invoice_pdf(
     )
     elements.append(title)
 
-    period = f"For periode {year}-{month:02d} er den gjennomsnittlige strømprisene inkludert påslag satt til {nok_per_kwh:.2f} NOK per kWh."
+    norwegian_date_str = format_month_to_norwegian(month)
+    if norwegian_date_str is None:
+        norwegian_date_str = f"{month:02d}"
+
+    period = f"For {norwegian_date_str} {year} er den gjennomsnittlige strømprisen {nok_per_kwh:.2f} NOK per kWh, ekskl. mva."
     elements.append(Paragraph(period, styles["Normal"]))
 
     elements.append(Spacer(1, 20))
@@ -250,3 +254,25 @@ def format_norwegian_accounting(number):
         result = f"-{result}"
 
     return result
+
+
+def format_month_to_norwegian(month_int: int) -> int | None:
+    months = [
+        "januar",
+        "februar",
+        "mars",
+        "april",
+        "mai",
+        "juni",
+        "juli",
+        "august",
+        "september",
+        "oktober",
+        "november",
+        "desember",
+    ]
+
+    if 1 <= month_int <= 12:
+        return months[month_int - 1]
+    else:
+        return None
