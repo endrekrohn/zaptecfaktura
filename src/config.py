@@ -34,6 +34,8 @@ class Settings:
 
     fiken_api_url: str = "https://api.fiken.no/api/v2"
     fiken_oauth_url: str = "https://fiken.no/oauth"
+    # Fiken web app, for links to drafts.
+    fiken_web_url: str = "https://fiken.no"
     fiken_client_id: str = ""
     fiken_client_secret: str = ""
     # Must match a redirect URI registered on the Fiken app, e.g.
@@ -70,6 +72,7 @@ def load_settings() -> Settings:
         cookie_secure=_bool(env.get("COOKIE_SECURE"), True),
         fiken_api_url=env.get("FIKEN_API_URL", Settings.fiken_api_url),
         fiken_oauth_url=env.get("FIKEN_OAUTH_URL", Settings.fiken_oauth_url),
+        fiken_web_url=env.get("FIKEN_WEB_URL", Settings.fiken_web_url),
         fiken_client_id=env.get("FIKEN_CLIENT_ID", ""),
         fiken_client_secret=env.get("FIKEN_CLIENT_SECRET", ""),
         fiken_redirect_uri=env.get("FIKEN_REDIRECT_URI", ""),

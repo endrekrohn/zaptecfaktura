@@ -37,6 +37,15 @@ STATUSES: dict[str, tuple[str, str]] = {
     "failed": ("Feilet", "s-err"),
 }
 
+# Statuses where the draft exists in Fiken and can be opened there.
+OPENABLE_STATUSES = {"created", "exists"}
+
+
+def draft_url(fiken_web_url: str, company_slug: str, draft_uuid: str) -> str:
+    """Link to the draft in Fiken. Fiken addresses drafts by the UUID we set."""
+    return f"{fiken_web_url.rstrip('/')}/foretak/{company_slug}/fakturautkast/{draft_uuid}"
+
+
 # Fetches one installation's sessions for the month.
 UsageLoader = Callable[[str], Awaitable[InstallationUsage]]
 

@@ -386,6 +386,23 @@ def test_drafts_status_endpoint(make_client, fake_fiken):
         assert data["drafts"]["inst-a"]["label"] == "Utkast opprettet"
         assert data["drafts"]["inst-a"]["kwh"] == 10.0
         assert data["drafts"]["inst-b"]["status"] == "skipped"
+        assert data["drafts"]["inst-b"]["url"] is None
+
+
+def test_link_to_draft_in_fiken(make_client, fake_fiken):
+    from billing import draft_uuid
+
+    with make_client() as client:
+        login(client)
+        connect_fiken(client, fake_fiken)
+        client.post("/installations/inst-a/customer", data={"contact_id": 11, "year": 2026, "month": 10})
+        client.post("/drafts", data={"year": 2026, "month": 10, "nok_per_kwh": "1.5"})
+
+        url = f"https://fiken.no/foretak/test-as/fakturautkast/{draft_uuid('inst-a', 2026, 10)}"
+        assert fake_fiken.drafts[0]["uuid"] == draft_uuid("inst-a", 2026, 10)
+        assert client.get("/drafts/status?year=2026&month=10").json()["drafts"]["inst-a"]["url"] == url
+        page = client.get("/?year=2026&month=10")
+        assert f'href="{url}"' in page.text and 'rel="noopener"' in page.text
 
 
 def test_overview_does_not_fetch_sessions(make_client):

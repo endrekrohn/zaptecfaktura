@@ -6,6 +6,7 @@
 {% if d %}
 <span class="status {{ d.css }}"{% if d.error %} title="{{ d.error }}"{% endif %}>{% if d.css %}<span class="dot"></span>{% endif %}{{ d.label }}</span>
 {% if d.draft_id %}<div class="muted small">Utkast #{{ d.draft_id }} · {{ "%.3f" | format(d.kwh) | replace(".", ",") }} kWh · {{ d.price }} kr/kWh</div>{% endif %}
+{% if d.url %}<a class="small" href="{{ d.url }}" target="_blank" rel="noopener">Åpne utkastet i Fiken ↗</a>{% endif %}
 {% if d.error %}<div class="muted small">{{ d.error | truncate(120) }}</div>{% endif %}
 {% else %}
 <span class="muted small">Ikke opprettet</span>
@@ -217,6 +218,7 @@
         function renderDraft(d) {
             let html = `<span class="status ${esc(d.css)}">${d.css ? '<span class="dot"></span>' : ''}${esc(d.label)}</span>`;
             if (d.draft_id) html += `<div class="muted small">Utkast #${esc(d.draft_id)} · ${kwhFmt.format(d.kwh)} kWh · ${esc(d.price)} kr/kWh</div>`;
+            if (d.url) html += `<a class="small" href="${esc(d.url)}" target="_blank" rel="noopener">Åpne utkastet i Fiken ↗</a>`;
             if (d.error) html += `<div class="muted small">${esc(d.error.slice(0, 120))}</div>`;
             return html;
         }

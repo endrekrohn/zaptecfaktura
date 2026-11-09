@@ -25,7 +25,15 @@ from billing import (
     validate_period,
 )
 from config import BASE_DIR, settings
-from drafts import STATUSES, PlannedInstallation, plan_drafts, run_draft_job, usage_pdf
+from drafts import (
+    OPENABLE_STATUSES,
+    STATUSES,
+    PlannedInstallation,
+    draft_url,
+    plan_drafts,
+    run_draft_job,
+    usage_pdf,
+)
 from fiken_api import FikenAPI, FikenError
 from fiken_oauth import (
     FikenNotConnected,
@@ -315,6 +323,11 @@ def draft_status_view(draft: database.DraftRecord | None) -> dict | None:
         "kwh": draft.kwh,
         "price": format_norwegian_accounting(draft.unit_price_ore / 100),
         "error": draft.error,
+        "url": (
+            draft_url(settings.fiken_web_url, draft.company_slug, draft.draft_uuid)
+            if draft.status in OPENABLE_STATUSES
+            else None
+        ),
     }
 
 
