@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Noe gikk galt · Zaptec-faktura{% endblock %}
+{% block content %}
+<div class="page">
+    <div class="container container-sm stack">
+        <h1>Noe gikk galt</h1>
+        <div class="alert alert-err"><span class="dot"></span>{{ error }}</div>
+        <p><a href="/">Tilbake til oversikten</a></p>
+    </div>
+</div>
+{% endblock %}

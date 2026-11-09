@@ -1,210 +1,256 @@
-{% extends "base.html" %} {% block content %}
-
-{% if error %}
-<p class="error">{{ error }}</p>
+{% extends "base.html" %}
+{% set period = (month | month_name) ~ " " ~ year %}
+{% set qs = "year=" ~ year ~ "&month=" ~ month ~ ("&nok_per_kwh=" ~ (nok_per_kwh | urlencode) if nok_per_kwh else "") %}
+{% block title %}{{ period }} · Zaptec-faktura{% endblock %}
+{% macro draft_cell(d) -%}
+{% if d %}
+<span class="status {{ d.css }}"{% if d.error %} title="{{ d.error }}"{% endif %}>{% if d.css %}<span class="dot"></span>{% endif %}{{ d.label }}</span>
+{% if d.draft_id %}<div class="muted small">Utkast {% if d.url %}<a href="{{ d.url }}" target="_blank" rel="noopener" title="Åpne utkastet i Fiken">#{{ d.draft_id }}</a>{% else %}#{{ d.draft_id }}{% endif %} · {{ "%.3f" | format(d.kwh) | replace(".", ",") }} kWh · {{ d.price }} kr/kWh</div>{% endif %}
+{% if d.error %}<div class="muted small">{{ d.error | truncate(120) }}</div>{% endif %}
+{% else %}
+<span class="muted small">Ikke opprettet</span>
 {% endif %}
-
-<style>
-    .container {
-        max-width: 800px;
-        margin: 0 auto;
-        background-color: #f8f9fa;
-        border-radius: 8px;
-        padding: 20px;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    }
-
-    .formgrid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 20px;
-    }
-
-    .formgrid3 {
-        display: grid;
-        grid-template-columns: 1fr 1fr 1fr;
-        gap: 20px;
-    }
-
-    .form-section {
-        background-color: #f8f9fa;
-        border-radius: 8px;
-        padding: 20px;
-        margin: 20px 0;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    }
-
-    .form-group {
-        margin-bottom: 15px;
-    }
-
-    .form-group label {
-        display: block;
-        margin-bottom: 5px;
-        font-weight: bold;
-    }
-
-    .form-group input,
-    .form-group select {
-        width: 100%;
-        padding: 12px;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        font-size: 16px;
-        box-sizing: border-box;
-        transition: border-color 0.3s;
-    }
-
-    .form-group input:focus,
-    .form-group select:focus {
-        outline: none;
-        border-color: #007bff;
-        box-shadow: 0 0 5px rgba(0, 123, 255, 0.3);
-    }
-
-    .result-container {
-        background-color: #e9f7fe;
-        border-left: 4px solid #007bff;
-        padding: 15px;
-        margin: 20px 0;
-        border-radius: 4px;
-    }
-
-    .result-container h3 {
-        margin-top: 0;
-        color: #007bff;
-    }
-
-    .result-value {
-        font-size: 24px;
-        font-weight: bold;
-        color: #007bff;
-    }
-
-    .submit-btn {
-        background-color: #007bff;
-        color: white;
-        padding: 12px 24px;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 16px;
-        transition: background-color 0.3s;
-    }
-
-    .submit-btn:hover {
-        background-color: #003e80;
-    }
-
-    .logout-link {
-        display: inline-block;
-        margin-left: 10px;
-        padding: 12px 24px;
-        background-color: #6c757d;
-        color: white;
-        text-decoration: none;
-        border-radius: 4px;
-        transition: background-color 0.3s;
-    }
-
-    .logout-link:hover {
-        background-color: #545b62;
-    }
-
-    .error {
-        background-color: #f8d7da;
-        color: #721c24;
-        padding: 10px;
-        border-radius: 4px;
-        margin: 10px 0;
-        border: 1px solid #f5c6cb;
-    }
-</style>
-
-<section class="container">
-
-    <h2>Eksporter</h2>
-
-
-
-    <form class="formgrid3">
-        <div class="form-group">
-            <label for="totalAmount">Sum på faktura ekskl. mva (NOK):</label>
-            <input type="number" id="totalAmount" name="totalAmount" step="0.01" min="0">
-        </div>
-
-        <div class="form-group">
-            <label for="totalConsumption">Totalt forbruk (kWh):</label>
-            <input type="number" id="totalConsumption" name="totalConsumption" step="0.01" min="0">
-        </div>
-
-        <div class="form-group">
-            <label for="markup">Påslag:</label>
-            <input type="number" id="markup" name="markup" step="0.01" min="0" value="1.25">
-        </div>
-    </form>
-
-
-    <form method="post" action="/exportall" class="form-container">
-        <div class="result-container">
-            <h3>Utregnet strømpris:</h3>
-            <p>Pris per kWh med påslag: <span class="result-value" id="result">0.00</span> kr/kWh (eksklusiv mva)</p>
-        </div>
-        <input type="hidden" id="nok_per_kwh" name="nok_per_kwh" value="0.00" required />
-        <div class="formgrid">
-            <div class="form-group">
-                <label for="year">År:</label>
-                <input type="number" id="year" name="year" min="2000" max="2100" value="{{ year if year else '' }}"
-                    required />
-            </div>
-            <div class="form-group">
-                <label for="month">Måned:</label>
-                <select id="month" name="month" required>
-                    <option value="">Velg måned</option>
-                    <option value="1">Januar</option>
-                    <option value="2">Februar</option>
-                    <option value="3">Mars</option>
-                    <option value="4">April</option>
-                    <option value="5">Mai</option>
-                    <option value="6">Juni</option>
-                    <option value="7">Juli</option>
-                    <option value="8">August</option>
-                    <option value="9">September</option>
-                    <option value="10">Oktober</option>
-                    <option value="11">November</option>
-                    <option value="12">Desember</option>
+{%- endmacro %}
+{% block content %}
+<div class="page" style="max-width: none">
+    <div class="container container-lg stack">
+        <div class="heading-wrapper">
+            <h1>Fakturagrunnlag {{ period | lower }}</h1>
+            <form class="row" method="get" action="/" aria-label="Velg periode">
+                <select class="input" name="month" aria-label="Måned" style="width: auto">
+                    {% for m in range(1, 13) %}
+                    <option value="{{ m }}" {% if m == month %}selected{% endif %}>{{ m | month_name }}</option>
+                    {% endfor %}
                 </select>
+                <select class="input" name="year" aria-label="År" style="width: auto">
+                    {% for y in years %}
+                    <option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>
+                    {% endfor %}
+                </select>
+                <button class="btn btn-ghost btn-sm" type="submit">Vis</button>
+            </form>
+        </div>
+
+        {% if fiken_error %}
+        <div class="alert alert-err"><span class="dot"></span>{{ fiken_error }}</div>
+        {% endif %}
+        {% if not fiken_enabled %}
+        <div class="alert"><span class="dot" style="background: var(--amber)"></span>Fiken er ikke satt opp på serveren.
+            Du kan laste ned grunnlaget, men ikke opprette utkast.</div>
+        {% elif not fiken_ready %}
+        <div class="alert spread"><span><span class="dot" style="background: var(--amber)"></span>Koble til Fiken for å
+                lage fakturautkast direkte i Fiken.</span>
+            <a class="btn btn-fill btn-sm" href="/fiken">Koble til Fiken</a></div>
+        {% endif %}
+        {% if pending %}
+        <div class="alert"><span class="dot" style="background: var(--teal)"></span>Oppretter utkast i Fiken.
+            Siden oppdateres automatisk.</div>
+        {% endif %}
+
+        <form id="price-form" method="post" action="/exportall"></form>
+        <input type="hidden" name="year" value="{{ year }}" form="price-form" />
+        <input type="hidden" name="month" value="{{ month }}" form="price-form" />
+
+        <section class="card" aria-labelledby="price-title">
+            <div class="card-body stack">
+                <div class="spread">
+                    <h2 id="price-title">Strømpris</h2>
+                    <span class="muted small">Regn ut pris per kWh fra strømregningen</span>
+                </div>
+                <div class="grid-3">
+                    <div class="field">
+                        <label for="totalAmount">Sum strømregning ekskl. mva</label>
+                        <div class="input-suffix">
+                            <input class="input" type="number" id="totalAmount" step="0.01" min="0" inputmode="decimal" />
+                            <span>kr</span>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label for="totalConsumption">Totalt forbruk</label>
+                        <div class="input-suffix">
+                            <input class="input" type="number" id="totalConsumption" step="0.01" min="0" inputmode="decimal" />
+                            <span>kWh</span>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label for="markup">Påslag</label>
+                        <input class="input" type="number" id="markup" step="0.01" min="0" value="1.25" inputmode="decimal" />
+                    </div>
+                </div>
+            </div>
+            <div class="divider-dashed"></div>
+            <div class="card-foot" style="flex-wrap: wrap; gap: 16px; align-items: flex-end">
+                <div class="field" style="min-width: 220px">
+                    <label for="nok_per_kwh">Pris per kWh ekskl. mva</label>
+                    <div class="input-suffix">
+                        <input class="input num" style="font-size: 1.2rem" type="number" id="nok_per_kwh"
+                            name="nok_per_kwh" form="price-form" step="0.01" min="0" max="100" inputmode="decimal"
+                            value="{{ nok_per_kwh }}" required />
+                        <span>kr/kWh</span>
+                    </div>
+                </div>
+                <div class="actions">
+                    <button class="btn btn-ghost" type="submit" form="price-form" formaction="/exportall">
+                        Last ned alt (zip)
+                    </button>
+                    {% if fiken_ready %}
+                    <button class="btn btn-coral" type="submit" form="price-form" formaction="/drafts"
+                        id="create-drafts" data-ready="{{ ready }}" {% if ready == 0 or pending %}disabled{% endif %}>
+                        Opprett {{ ready }} utkast i Fiken
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+        </section>
+
+        <div class="heading-wrapper">
+            <div class="row">
+                <h2>Installasjoner</h2>
+                <a class="small" href="/?{{ qs }}&refresh=1" title="Hent installasjoner og forbruk på nytt fra Zaptec">Oppdater fra Zaptec</a>
+            </div>
+            <div class="tally small">
+                {% if fiken_ready %}<span class="muted">Fiken: <a href="/fiken">{{ fiken_company }}</a></span>{% endif %}
+                <span class="status">{{ rows | length }} totalt</span>
+                {% if fiken_ready %}
+                <span class="status s-ok"><span class="dot"></span>{{ ready }} klare</span>
+                {% if missing %}<span class="status s-warn"><span class="dot"></span>{{ missing }} mangler kunde</span>{% endif %}
+                {% endif %}
             </div>
         </div>
 
-        <button type="submit" class="submit-btn">Eksporter bruk</button>
-        <a href="/logout" class="logout-link">Logg out</a>
-    </form>
-
-
-</section>
+        <div class="table-root">
+            <div class="table-scroll">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Installasjon</th>
+                            <th class="right">Forbruk</th>
+                            <th class="right">Beløp ekskl. mva</th>
+                            {% if fiken_ready %}
+                            <th>Kunde i Fiken</th>
+                            <th>Utkast</th>
+                            {% endif %}
+                            <th class="col-actions"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in rows %}
+                        {% set u = row.total %}
+                        <tr>
+                            <td>
+                                <div style="font-weight: 600">{{ u.name }}</div>
+                                <div class="muted small">{{ u.session_count }} ladeøkter</div>
+                            </td>
+                            <td class="right nowrap">{{ "%.3f" | format(u.kwh) | replace(".", ",") }} kWh</td>
+                            <td class="right nowrap"><span class="amount" data-kwh="{{ u.kwh }}">–</span></td>
+                            {% if fiken_ready %}
+                            <td>
+                                {% if row.customer %}
+                                <div>{{ row.customer.name }}</div>
+                                <a class="small" href="/installations/{{ u.installation_id }}/customer?{{ qs }}">Endre</a>
+                                {% elif row.contact_id %}
+                                <span class="status s-warn"><span class="dot"></span>Fant ikke kunden (#{{ row.contact_id }})</span>
+                                <div><a class="small" href="/installations/{{ u.installation_id }}/customer?{{ qs }}">Velg på nytt</a></div>
+                                {% else %}
+                                <a href="/installations/{{ u.installation_id }}/customer?{{ qs }}">Velg kunde</a>
+                                {% endif %}
+                            </td>
+                            <td data-draft-cell="{{ u.installation_id }}">{{ draft_cell(row.draft) }}</td>
+                            {% endif %}
+                            <td class="col-actions">
+                                <button class="btn btn-ghost btn-sm" type="submit" form="price-form" formaction="/export"
+                                    name="installation_id" value="{{ u.installation_id }}">PDF</button>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td class="table-empty" colspan="6">Fant ingen installasjoner på Zaptec-kontoen.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% if fiken_ready %}
+        <p class="muted small" style="margin: 0">
+            Utkastene lages med grunnlaget som vedlegg: inntektskonto {{ invoice_settings.income_account }} ·
+            {{ vat_label(invoice_settings.vat_type) }} · {{ invoice_settings.days_until_due }} dagers forfall
+            (<a href="/fiken/innstillinger">endre</a>). Kontroller og send dem fra Fiken.
+            Et utkast som allerede finnes for samme måned blir ikke overskrevet. Slett det i Fiken for å lage det på nytt.
+        </p>
+        {% endif %}
+    </div>
+</div>
 
 <script>
-    function calculatePrice() {
-        const totalAmount = parseFloat(document.getElementById('totalAmount').value) || 0;
-        const totalConsumption = parseFloat(document.getElementById('totalConsumption').value) || 0;
-        const markup = parseFloat(document.getElementById('markup').value) || 1.0;
+    (function () {
+        const price = document.getElementById('nok_per_kwh');
+        const calc = ['totalAmount', 'totalConsumption', 'markup'].map((id) => document.getElementById(id));
+        const fmt = new Intl.NumberFormat('nb-NO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-        let pricePerKwh = 0;
-        if (totalConsumption > 0) {
-            pricePerKwh = (totalAmount / totalConsumption) * markup;
+        function updateAmounts() {
+            const p = parseFloat(price.value);
+            document.querySelectorAll('.amount').forEach((el) => {
+                const kwh = parseFloat(el.dataset.kwh);
+                el.textContent = Number.isFinite(p) ? fmt.format(Math.round(kwh * p * 100) / 100) + ' kr' : '–';
+            });
         }
 
-        document.getElementById('result').textContent = pricePerKwh.toFixed(2);
-        document.getElementById('nok_per_kwh').value = pricePerKwh.toFixed(2);
-    }
+        function calculatePrice() {
+            const [amount, consumption, markup] = calc.map((el) => parseFloat(el.value));
+            if (amount > 0 && consumption > 0) {
+                price.value = ((amount / consumption) * (Number.isFinite(markup) ? markup : 1)).toFixed(2);
+                updateAmounts();
+            }
+        }
 
-    document.addEventListener('DOMContentLoaded', function () {
-        const inputs = ['totalAmount', 'totalConsumption', 'markup'];
-        inputs.forEach(inputId => {
-            document.getElementById(inputId).addEventListener('input', calculatePrice);
-        });
-    });
+        calc.forEach((el) => el.addEventListener('input', calculatePrice));
+        price.addEventListener('input', updateAmounts);
+        // Enter in the price field should not trigger a download or create drafts.
+        price.addEventListener('keydown', (e) => { if (e.key === 'Enter') e.preventDefault(); });
+        updateAmounts();
+
+        // While drafts are being created, poll the small status endpoint
+        // instead of reloading the whole page; reload once when done.
+        const pending = {{ 'true' if pending else 'false' }};
+        const statusUrl = '/drafts/status?year={{ year }}&month={{ month }}';
+        const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+        const kwhFmt = new Intl.NumberFormat('nb-NO', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+        function renderDraft(d) {
+            let html = `<span class="status ${esc(d.css)}">${d.css ? '<span class="dot"></span>' : ''}${esc(d.label)}</span>`;
+            if (d.draft_id) {
+                const id = `#${esc(d.draft_id)}`;
+                const ref = d.url ? `<a href="${esc(d.url)}" target="_blank" rel="noopener" title="Åpne utkastet i Fiken">${id}</a>` : id;
+                html += `<div class="muted small">Utkast ${ref} · ${kwhFmt.format(d.kwh)} kWh · ${esc(d.price)} kr/kWh</div>`;
+            }
+            if (d.error) html += `<div class="muted small">${esc(d.error.slice(0, 120))}</div>`;
+            return html;
+        }
+        async function poll() {
+            try {
+                const response = await fetch(statusUrl, { headers: { Accept: 'application/json' } });
+                if (!response.ok) throw new Error(response.status);
+                const data = await response.json();
+                for (const [id, d] of Object.entries(data.drafts)) {
+                    const cell = document.querySelector(`[data-draft-cell="${CSS.escape(id)}"]`);
+                    if (cell) cell.innerHTML = renderDraft(d);
+                }
+                if (!data.pending) return window.location.reload();
+            } catch (e) {
+                // Network hiccup: try again on the next tick.
+            }
+            setTimeout(poll, 2000);
+        }
+        if (pending) setTimeout(poll, 1500);
+
+        const createButton = document.getElementById('create-drafts');
+        if (createButton) {
+            createButton.addEventListener('click', (event) => {
+                if (!price.reportValidity()) return;
+                const message = `Opprette ${createButton.dataset.ready} utkast i Fiken med ${price.value} kr/kWh ekskl. mva?`;
+                if (!window.confirm(message)) event.preventDefault();
+            });
+        }
+    })();
 </script>
-
 {% endblock %}

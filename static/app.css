@@ -1,0 +1,638 @@
+/* Copied from gosp (web/ui/src/app.css) — Outline UI, see gosp docs/DESIGN.md.
+   Keep the base in sync with gosp; app-specific additions are at the bottom. */
+:root {
+	--bg: #ffffff;
+	--surface: #ffffff;
+	--muted: #f2f2f0;
+	--ink: #0d1718;
+	--ink-soft: #667077;
+	--line: #0d1718;
+	--sw: 2px;
+	--coral: #ef9f86;
+	--coral-hover: #e58a6b;
+	--teal: #1e7f79;
+	--green: #23a06b;
+	--amber: #e39412;
+	--over: #ef9f86;
+	--r-card: 16px;
+	--r-ctrl: 14px;
+	--r-pill: 999px;
+	--focus: #1e7f79;
+	/* Container widths — the size scale a page caps its own content at via the
+	   .container utility below. Values mirror Mantine's Container sizes so the
+	   names carry the same intuition (xs narrowest → xl widest). Layouts stay
+	   full-bleed; a page opts into a width by picking a size. */
+	--container-xs: 33.75rem; /* 540px */
+	--container-sm: 45rem; /* 720px */
+	--container-md: 60rem; /* 960px */
+	--container-lg: 71.25rem; /* 1140px */
+	--container-xl: 82.5rem; /* 1320px */
+}
+
+* {
+	box-sizing: border-box;
+}
+
+body {
+	margin: 0;
+	background: var(--bg);
+	color: var(--ink);
+	font-family: 'Inter', system-ui, sans-serif;
+	line-height: 1.45;
+	-webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+.num,
+.btn,
+.tab {
+	font-family: 'Poppins', sans-serif;
+	letter-spacing: -0.01em;
+}
+
+h1 {
+	font-size: 1.7rem;
+	margin: 0;
+}
+h2 {
+	font-size: 1.2rem;
+	margin: 0;
+}
+
+a {
+	color: var(--teal);
+	font-weight: 600;
+	text-decoration: none;
+}
+a:hover {
+	text-decoration: underline;
+}
+
+:focus-visible {
+	outline: 2.5px solid var(--focus);
+	outline-offset: 2px;
+	border-radius: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	* {
+		transition: none !important;
+	}
+}
+
+/* --- layout --- */
+.page {
+	max-width: 880px;
+	margin: 0 auto;
+	padding: 24px 20px 64px;
+}
+.stack {
+	display: flex;
+	flex-direction: column;
+	gap: 16px;
+}
+/* .container centres a page's content and caps its width at one of the size
+   tokens above (Mantine-style). A page owns its own width by picking a size —
+   `class="container container-md"` — and composes with .stack for vertical
+   rhythm. With no size modifier it is simply full width. */
+.container {
+	width: 100%;
+	max-width: var(--container-size, 100%);
+	margin-inline: auto;
+}
+.container-xs {
+	--container-size: var(--container-xs);
+}
+.container-sm {
+	--container-size: var(--container-sm);
+}
+.container-md {
+	--container-size: var(--container-md);
+}
+.container-lg {
+	--container-size: var(--container-lg);
+}
+.container-xl {
+	--container-size: var(--container-xl);
+}
+.row {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+}
+.spread {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+}
+.muted {
+	color: var(--ink-soft);
+}
+.small {
+	font-size: 0.85rem;
+}
+
+/* --- top bar --- */
+.topbar {
+	padding: 14px 20px;
+}
+.topbar .inner {
+	margin: 0 auto;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+}
+.wordmark {
+	font-family: 'Poppins', sans-serif;
+	font-weight: 800;
+	font-size: 1.25rem;
+	color: var(--ink);
+}
+
+/* --- avatar --- */
+.avatar {
+	width: 40px;
+	height: 40px;
+	border-radius: var(--r-pill);
+	border: var(--sw) solid var(--line);
+	background: var(--surface);
+	display: inline-grid;
+	place-items: center;
+	font-family: 'Poppins', sans-serif;
+	font-weight: 700;
+	font-size: 0.85rem;
+	color: var(--ink);
+	transition: background 0.12s;
+}
+/* The avatar is the user-menu trigger; tint it on hover so it reads as
+   pressable (the trigger button itself is unstyled — see Menu.svelte). */
+.menu-trigger:hover .avatar {
+	background: var(--muted);
+}
+
+/* --- floating menu content (see components/Menu.svelte) --- */
+.menu-label {
+	font-size: 0.72rem;
+	font-weight: 600;
+	color: var(--ink-soft);
+	padding: 0 2px 2px;
+}
+.menu-item {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	width: 100%;
+	padding: 11px 14px;
+	border: var(--sw) solid var(--line);
+	border-radius: var(--r-ctrl);
+	background: var(--surface);
+	color: var(--ink);
+	font-family: 'Poppins', sans-serif;
+	font-weight: 600;
+	font-size: 0.9rem;
+	text-align: left;
+	cursor: pointer;
+	transition: background 0.12s;
+}
+.menu-item:hover {
+	background: var(--muted);
+	text-decoration: none;
+}
+.menu-item-text {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.menu-arrow {
+	color: var(--ink-soft);
+	flex-shrink: 0;
+}
+.menu-sep {
+	border-top: var(--sw) solid var(--line);
+	margin: 4px 0;
+}
+
+/* --- card --- */
+.card {
+	display: flex;
+	flex-direction: column;
+	background: var(--surface);
+	border: var(--sw) solid var(--line);
+	border-radius: var(--r-card);
+	overflow: hidden;
+}
+.card-body {
+	padding: 18px;
+}
+.card-foot {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 13px 18px;
+}
+.divider-dashed {
+	border-top: var(--sw) dashed var(--line);
+	margin: 0 18px;
+}
+
+/* --- buttons --- */
+.btn {
+	font-family: 'Poppins', sans-serif;
+	font-weight: 600;
+	font-size: 15px;
+	padding: 12px 18px;
+	border-radius: var(--r-pill);
+	border: var(--sw) solid var(--line);
+	background: transparent;
+	color: var(--ink);
+	cursor: pointer;
+	transition: background 0.12s;
+	text-decoration: none;
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+}
+.btn:hover {
+	text-decoration: none;
+}
+.btn-fill {
+	background: var(--ink);
+	color: #fff;
+	border-color: var(--ink);
+}
+.btn-coral {
+	background: var(--coral);
+	color: var(--ink);
+	border: none;
+}
+.btn-coral:not(:disabled):hover {
+	background: var(--coral-hover);
+}
+.btn-ghost:hover {
+	background: var(--muted);
+}
+.btn:disabled {
+	opacity: 0.45;
+	cursor: not-allowed;
+}
+.btn-sm {
+	padding: 8px 14px;
+	font-size: 13px;
+}
+
+/* --- inputs --- */
+.field {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+.field label {
+	font-weight: 600;
+	font-size: 0.9rem;
+}
+.input {
+	width: 100%;
+	border: var(--sw) solid var(--line);
+	border-radius: var(--r-ctrl);
+	padding: 12px 13px;
+	font-size: 15px;
+	font-family: 'Inter', sans-serif;
+	background: var(--surface);
+	color: var(--ink);
+}
+.input:focus {
+	outline: none;
+	box-shadow: inset 0 0 0 1px var(--line);
+}
+select.input {
+	appearance: none;
+	cursor: pointer;
+	transition: background 0.12s;
+}
+select.input:hover {
+	background: var(--muted);
+}
+
+/* Outlined checkbox — 2px stroke like every control; fills with --ink when on.
+   Shared so table selection and in-row checkboxes read identically. */
+.checkbox {
+	appearance: none;
+	flex-shrink: 0;
+	width: 20px;
+	height: 20px;
+	margin: 0;
+	border: var(--sw) solid var(--line);
+	border-radius: 6px;
+	background: var(--surface);
+	cursor: pointer;
+	display: inline-grid;
+	place-content: center;
+	transition: background 0.12s;
+}
+.checkbox:not(:checked):not(:indeterminate):hover {
+	background: var(--muted);
+}
+.checkbox:checked,
+.checkbox:indeterminate {
+	background: var(--ink);
+}
+.checkbox:checked::after {
+	content: '';
+	width: 5px;
+	height: 9px;
+	border: solid #fff;
+	border-width: 0 2.5px 2.5px 0;
+	transform: translateY(-1px) rotate(45deg);
+}
+.checkbox:indeterminate::after {
+	content: '';
+	width: 10px;
+	height: 2.5px;
+	background: #fff;
+}
+
+/* --- tag / pill / status --- */
+.tag {
+	background: var(--muted);
+	border-radius: var(--r-pill);
+	padding: 4px 11px;
+	font-size: 12.5px;
+	font-weight: 600;
+	color: var(--ink);
+	white-space: nowrap;
+}
+.role {
+	border: var(--sw) solid var(--line);
+	border-radius: var(--r-pill);
+	padding: 3px 10px;
+	font-size: 12px;
+	font-weight: 600;
+}
+
+/* --- status indicator (DESIGN §8.5): a coloured dot + label, no pill --- */
+.status {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 13px;
+	font-weight: 600;
+	white-space: nowrap;
+}
+.status .dot {
+	width: 9px;
+	height: 9px;
+	border-radius: 999px;
+	border: 1.5px solid var(--line);
+	flex-shrink: 0;
+}
+.s-ok .dot {
+	background: var(--green);
+}
+.s-warn .dot {
+	background: var(--amber);
+}
+.s-run .dot {
+	background: var(--teal);
+}
+.s-err .dot {
+	background: var(--over);
+}
+
+/* --- feedback --- */
+.alert {
+	border: var(--sw) solid var(--line);
+	border-radius: var(--r-ctrl);
+	padding: 12px 14px;
+	font-size: 0.9rem;
+	font-weight: 500;
+}
+.alert .dot {
+	width: 9px;
+	height: 9px;
+	border-radius: 999px;
+	border: 1.5px solid var(--line);
+	display: inline-block;
+	margin-right: 8px;
+}
+.alert-err .dot {
+	background: var(--over);
+}
+.alert-ok .dot {
+	background: var(--green);
+}
+
+/* --- list rows --- */
+.list {
+	display: flex;
+	flex-direction: column;
+}
+.list-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 14px 0;
+}
+.list-row + .list-row {
+	border-top: var(--sw) dashed var(--line);
+}
+
+/* --- toast --- */
+.toast-wrap {
+	position: fixed;
+	bottom: 20px;
+	left: 50%;
+	transform: translateX(-50%);
+	z-index: 50;
+}
+.toast {
+	background: var(--ink);
+	color: #fff;
+	border-radius: var(--r-pill);
+	padding: 12px 20px;
+	font-weight: 600;
+	font-size: 0.9rem;
+}
+
+/* ------------------------------------------------------------------------
+   zaptecfaktura additions (server-rendered equivalents of gosp components)
+   ------------------------------------------------------------------------ */
+
+.topbar .inner {
+	max-width: var(--container-lg);
+}
+.topbar form {
+	margin: 0;
+}
+.btn {
+	white-space: nowrap;
+}
+@media (max-width: 680px) {
+	.topbar .user-email {
+		display: none;
+	}
+}
+
+.heading-wrapper {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	flex-wrap: wrap;
+}
+
+.grid-3 {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 16px;
+}
+.grid-2 {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 16px;
+}
+@media (max-width: 680px) {
+	.grid-3,
+	.grid-2 {
+		grid-template-columns: 1fr;
+	}
+}
+
+.actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 10px;
+}
+
+/* Hero number inside a card (DESIGN §6: Poppins, tight tracking). */
+.num {
+	font-weight: 700;
+	font-size: 1.6rem;
+	letter-spacing: -0.02em;
+}
+
+/* Summary tally (DESIGN §8.10): dots + counts, hidden on small screens. */
+.tally {
+	display: flex;
+	gap: 18px;
+}
+@media (max-width: 680px) {
+	.tally {
+		display: none;
+	}
+}
+
+/* --- table (port of gosp lib/components/Table.svelte, withTableBorder) --- */
+.table-root {
+	--table-border-w: 1px;
+	--table-border-color: var(--line);
+	--table-px: 14px;
+	--table-py: 12px;
+	background: var(--surface);
+	border: var(--sw) solid var(--line);
+	border-radius: var(--r-card);
+	overflow: hidden;
+}
+.table-scroll {
+	overflow-x: auto;
+}
+.table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 0.92rem;
+}
+.table thead th {
+	padding: var(--table-py) var(--table-px);
+	font-family: 'Poppins', sans-serif;
+	font-weight: 500;
+	font-size: 0.85rem;
+	color: var(--ink-soft);
+	text-align: left;
+	white-space: nowrap;
+	border-bottom: var(--table-border-w) solid var(--table-border-color);
+}
+.table tbody td {
+	padding: var(--table-py) var(--table-px);
+	vertical-align: middle;
+	transition: background 0.12s;
+}
+.table tbody tr + tr td {
+	border-top: var(--table-border-w) solid var(--table-border-color);
+}
+.table tbody tr:hover td {
+	background: var(--muted);
+}
+.table .right {
+	text-align: right;
+}
+.table .nowrap {
+	white-space: nowrap;
+}
+.table .col-actions {
+	width: 1px;
+	white-space: nowrap;
+	text-align: right;
+}
+.table-empty {
+	padding: 18px 14px;
+	color: var(--ink-soft);
+	font-size: 0.9rem;
+}
+
+/* Inline link-styled button for actions inside rows (teal text, §5). */
+.link-btn {
+	background: none;
+	border: none;
+	padding: 0;
+	font: inherit;
+	font-family: 'Poppins', sans-serif;
+	font-weight: 600;
+	color: var(--teal);
+	cursor: pointer;
+}
+.link-btn:hover {
+	text-decoration: underline;
+}
+
+.input-suffix {
+	position: relative;
+}
+.input-suffix .input {
+	padding-right: 72px;
+}
+.input-suffix span {
+	position: absolute;
+	right: 14px;
+	top: 50%;
+	transform: translateY(-50%);
+	color: var(--ink-soft);
+	font-size: 0.9rem;
+	pointer-events: none;
+}
+
+/* --- top bar menu (server-rendered counterpart of gosp's Menu) --- */
+.menu {
+	position: relative;
+}
+.menu-panel {
+	position: absolute;
+	right: 0;
+	top: calc(100% + 8px);
+	z-index: 60;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	width: min(260px, calc(100vw - 32px));
+	padding: 10px;
+	background: var(--surface);
+	border: var(--sw) solid var(--line);
+	border-radius: var(--r-card);
+}
+.menu-panel[hidden] {
+	display: none;
+}

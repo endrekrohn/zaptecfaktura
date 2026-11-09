@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Fiken · Zaptec-faktura{% endblock %}
+{% block content %}
+<div class="page" style="max-width: none">
+    <div class="container container-sm stack">
+        <p style="margin: 0"><a href="/">‹ Tilbake til oversikten</a></p>
+        <div class="stack" style="gap: 4px">
+            <h1>Fiken</h1>
+            <p class="muted" style="margin: 0">Koble til Fiken for å lage fakturautkast direkte i regnskapet ditt.</p>
+        </div>
+
+        {% if error %}
+        <div class="alert alert-err"><span class="dot"></span>{{ error }}</div>
+        {% endif %}
+
+        <section class="card">
+            {% if connection and connection.company_slug %}
+            <div class="card-body stack" style="gap: 6px">
+                <span class="status s-ok"><span class="dot"></span>Tilkoblet</span>
+                <div class="num" style="font-size: 1.3rem">{{ connection.company_name }}</div>
+                <div class="muted small">Fakturautkast lages i dette foretaket.</div>
+            </div>
+            <div class="divider-dashed"></div>
+            <div class="card-foot" style="gap: 10px; flex-wrap: wrap; justify-content: flex-start">
+                <a class="btn btn-fill btn-sm" href="/fiken/innstillinger">Fakturainnstillinger</a>
+                <a class="btn btn-ghost btn-sm" href="/fiken/company">Bytt foretak</a>
+                <form method="post" action="/fiken/disconnect">
+                    <button class="btn btn-ghost btn-sm" type="submit">Koble fra Fiken</button>
+                </form>
+            </div>
+            {% elif connection %}
+            <div class="card-body stack" style="gap: 6px">
+                <span class="status s-warn"><span class="dot"></span>Velg foretak</span>
+                <div class="muted small">Fiken er tilkoblet, men du har ikke valgt hvilket foretak fakturaene skal lages i.</div>
+            </div>
+            <div class="divider-dashed"></div>
+            <div class="card-foot" style="gap: 10px; flex-wrap: wrap">
+                <a class="btn btn-fill btn-sm" href="/fiken/company">Velg foretak</a>
+                <form method="post" action="/fiken/disconnect">
+                    <button class="btn btn-ghost btn-sm" type="submit">Koble fra Fiken</button>
+                </form>
+            </div>
+            {% else %}
+            <div class="card-body stack" style="gap: 10px">
+                <span class="status"><span class="dot" style="background: var(--muted)"></span>Ikke tilkoblet</span>
+                <p style="margin: 0">Du sendes til Fiken for å logge inn og gi tilgang. Appen kan da:</p>
+                <ul style="margin: 0; padding-left: 20px">
+                    <li>lese kundelisten, så du kan koble installasjoner til kunder</li>
+                    <li>lage fakturautkast med grunnlaget som vedlegg</li>
+                </ul>
+                <p class="muted small" style="margin: 0">Appen sender aldri fakturaer. Du kontrollerer og sender dem selv i Fiken.</p>
+            </div>
+            <div class="divider-dashed"></div>
+            <div class="card-foot">
+                <form method="post" action="/fiken/connect">
+                    <button class="btn btn-coral" type="submit">Koble til Fiken</button>
+                </form>
+            </div>
+            {% endif %}
+        </section>
+        <p class="muted small" style="margin: 0">
+            Du kan også trekke tilbake tilgangen i Fiken under Rediger konto → Sikkerhet → Apper du har gitt tilgang til.
+        </p>
+    </div>
+</div>
+{% endblock %}

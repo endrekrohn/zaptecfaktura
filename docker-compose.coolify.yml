@@ -1,0 +1,81 @@
+# Coolify deployment for zaptecfaktura.
+#
+# In Coolify: New resource -> this Git repository -> Build pack "Docker
+# Compose", Docker Compose Location "/docker-compose.coolify.yml".
+#
+# This file is the source of truth for configuration. Coolify creates an
+# editable Environment Variable for every ${VAR} below, prefilled with the
+# default after ":-". Variables marked ":?" are required and block deployment
+# until set. Values edited in the Coolify UI are kept on redeploy.
+#
+# Routing: assign a domain to the `zaptecfaktura` service (or use the
+# generated one). SERVICE_FQDN_ZAPTECFAKTURA_8000 tells the Coolify proxy to
+# send traffic to container port 8000, served over HTTPS.
+services:
+  zaptecfaktura:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      # --- routing ----------------------------------------------------------
+      # Routes the assigned domain to container port 8000.
+      - SERVICE_FQDN_ZAPTECFAKTURA_8000
+
+      # --- access -----------------------------------------------------------
+      # Zaptec emails allowed to log in, comma separated. Empty lets anyone
+      # with a Zaptec account log in (they only see installations they own).
+      # Recommended for an internet-facing deployment: set your own email.
+      - ALLOWED_USERS=${ALLOWED_USERS:-}
+      # Session cookies are Secure: the app is only served over HTTPS.
+      - COOKIE_SECURE=true
+      - SESSION_MAX_AGE_SECONDS=${SESSION_MAX_AGE_SECONDS:-43200}
+
+      # --- secrets ----------------------------------------------------------
+      # Encrypts the stored Fiken tokens. Generated once by Coolify and kept
+      # across deployments. Changing it disconnects everyone from Fiken.
+      - SECRET_KEY=${SERVICE_PASSWORD_64_SECRETKEY}
+
+      # --- storage ----------------------------------------------------------
+      # SQLite database (sessions, Fiken connection, customer links, draft
+      # status, cached monthly totals). Lives on the volume below.
+      - DATABASE_PATH=/data/zaptecfaktura.db
+
+      # --- Zaptec -----------------------------------------------------------
+      - ZAPTEC_API_URL=${ZAPTEC_API_URL:-https://api.zaptec.com}
+
+      # --- Fiken OAuth app ----------------------------------------------------
+      # From Fiken: Rediger konto -> API -> Ny app ("Meg selv/mine foretak").
+      - FIKEN_CLIENT_ID=${FIKEN_CLIENT_ID:?}
+      - FIKEN_CLIENT_SECRET=${FIKEN_CLIENT_SECRET:?}
+      # Must be registered on the Fiken app exactly as shown in Coolify.
+      # Defaults to the domain Coolify assigns to this service.
+      - FIKEN_REDIRECT_URI=${FIKEN_REDIRECT_URI:-${SERVICE_URL_ZAPTECFAKTURA_8000}/fiken/callback}
+      - FIKEN_API_URL=${FIKEN_API_URL:-https://api.fiken.no/api/v2}
+      - FIKEN_OAUTH_URL=${FIKEN_OAUTH_URL:-https://fiken.no/oauth}
+      - FIKEN_WEB_URL=${FIKEN_WEB_URL:-https://fiken.no}
+
+      # --- invoice defaults ---------------------------------------------------
+      # Used until a company saves its own settings under
+      # Fiken -> Fakturainnstillinger in the app.
+      - FIKEN_INCOME_ACCOUNT=${FIKEN_INCOME_ACCOUNT:-3000}
+      - FIKEN_VAT_TYPE=${FIKEN_VAT_TYPE:-HIGH}
+      - FIKEN_DAYS_UNTIL_DUE=${FIKEN_DAYS_UNTIL_DUE:-14}
+    volumes:
+      - zaptecfaktura-data:/data
+    # Run exactly one container: the Fiken request lock, the draft job lock
+    # and the caches live in process memory, and SQLite is a single file.
+    healthcheck:
+      # The image has no curl/wget; use Python against the public /health.
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+volumes:
+  zaptecfaktura-data:
