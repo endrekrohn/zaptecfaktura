@@ -96,6 +96,25 @@ uv run fastapi dev src/main.py
 uv run pytest
 ```
 
+## Coolify
+
+`docker-compose.coolify.yml` er oppsettet for Coolify:
+
+1. Nytt resource fra dette Git-repoet, build pack «Docker Compose», og
+   Docker Compose Location `/docker-compose.coolify.yml`.
+2. Sett domene på tjenesten `zaptecfaktura` (eller bruk det genererte).
+   Proxyen sender trafikken til port 8000 over HTTPS.
+3. Fyll inn `FIKEN_CLIENT_ID` og `FIKEN_CLIENT_SECRET` under Environment
+   Variables. De er påkrevd, så Coolify deployer ikke før de er satt.
+   Sett gjerne `ALLOWED_USERS` til din egen Zaptec-e-post.
+4. Registrer `FIKEN_REDIRECT_URI` slik Coolify viser den
+   (`https://<domene>/fiken/callback`) som redirect URI på Fiken-appen.
+5. Deploy.
+
+`SECRET_KEY` genereres av Coolify første gang og beholdes. Databasen ligger i
+volumet `zaptecfaktura-data`. Kjør bare én container, siden låser og cache
+ligger i minnet.
+
 ## Docker
 
 ```sh
