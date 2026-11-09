@@ -8,7 +8,8 @@ from fastapi.testclient import TestClient
 import database
 import main
 from conftest import CLIENT_ID, CLIENT_SECRET, REDIRECT_URI
-from zaptec_api import ZaptecAuthError
+from usage import UsageService
+from zaptec_api import ChargeSession, UsageTotal, ZaptecAuthError
 
 USER = "endre@example.com"
 INSTALLATIONS = [
@@ -16,7 +17,7 @@ INSTALLATIONS = [
     {"Id": "inst-b", "Name": "Garasje B"},
 ]
 SESSIONS = {
-    "inst-a": [{"Energy": 10.0, "StartDateTime": "2026-10-02T10:00:00", "DeviceName": "L1"}],
+    "inst-a": [ChargeSession(None, None, "L1", 10.0, False)],
     "inst-b": [],
 }
 
@@ -24,6 +25,7 @@ SESSIONS = {
 class FakeZaptec:
     def __init__(self):
         self.expired = False
+        self.session_calls = 0
 
     async def login(self, username, password):
         if password != "riktig":
@@ -34,10 +36,20 @@ class FakeZaptec:
         if self.expired:
             raise ZaptecAuthError("expired")
         assert token == "zaptec-token"
-        return INSTALLATIONS
+        return list(INSTALLATIONS)
 
-    async def get_chargehistory(self, token, installation_id, from_date, to_date):
+    async def get_usage_total(self, token, installation_id, start, end):
+        if self.expired:
+            raise ZaptecAuthError("expired")
+        sessions = SESSIONS[installation_id]
+        return UsageTotal(sum(s.energy for s in sessions), len(sessions))
+
+    async def get_archived_sessions(self, token, installation_id, start, end):
+        self.session_calls += 1
         return SESSIONS[installation_id]
+
+    async def aclose(self):
+        pass
 
 
 @pytest.fixture
@@ -53,9 +65,11 @@ def make_client(tmp_path, monkeypatch, fake_fiken):
             **overrides,
         }
         monkeypatch.setattr(main, "settings", replace(main.settings, **values))
-        monkeypatch.setattr(main, "zaptec_api", FakeZaptec())
+        monkeypatch.setattr(main, "usage_service", UsageService(FakeZaptec()))
         monkeypatch.setattr(main, "fiken_transport", fake_fiken.transport)
         monkeypatch.setattr(main, "_fiken_tokens", None)
+        monkeypatch.setattr(main, "_fiken_http", None)
+        monkeypatch.setattr(main, "_customers_cache", {})
         return TestClient(main.app, base_url="https://testserver")
 
     return make
@@ -118,7 +132,8 @@ def test_wrong_password(make_client):
 def test_expired_zaptec_token_logs_out(make_client):
     with make_client() as client:
         login(client)
-        main.zaptec_api.expired = True
+        main.usage_service.zaptec.expired = True
+        main.usage_service.forget_user(USER)
         response = client.get("/", follow_redirects=False)
         assert response.headers["location"] == "/login"
 
@@ -357,3 +372,37 @@ def test_export_single_pdf(make_client):
         assert response.status_code == 200
         assert response.content.startswith(b"%PDF")
         assert "2026_10_grunnlag_Garasje_A.pdf" in response.headers["content-disposition"]
+
+
+def test_drafts_status_endpoint(make_client, fake_fiken):
+    with make_client() as client:
+        login(client)
+        assert client.get("/drafts/status?year=2026&month=10").json() == {"pending": False, "drafts": {}}
+        connect_fiken(client, fake_fiken)
+        client.post("/installations/inst-a/customer", data={"contact_id": 11, "year": 2026, "month": 10})
+        client.post("/drafts", data={"year": 2026, "month": 10, "nok_per_kwh": "1.5"})
+        data = client.get("/drafts/status?year=2026&month=10").json()
+        assert data["pending"] is False
+        assert data["drafts"]["inst-a"]["label"] == "Utkast opprettet"
+        assert data["drafts"]["inst-a"]["kwh"] == 10.0
+        assert data["drafts"]["inst-b"]["status"] == "skipped"
+
+
+def test_overview_does_not_fetch_sessions(make_client):
+    with make_client() as client:
+        login(client)
+        client.get("/?year=2026&month=10")
+        client.get("/?year=2026&month=10&refresh=1")
+        assert main.usage_service.zaptec.session_calls == 0
+
+
+def test_pending_page_polls_instead_of_reloading(make_client, fake_fiken):
+    with make_client() as client:
+        login(client)
+        connect_fiken(client, fake_fiken)
+        database.upsert_draft(
+            database.DraftRecord("test-as", "inst-a", 2026, 10, "u", 11, 10.0, 150, "pending")
+        )
+        page = client.get("/?year=2026&month=10")
+        assert 'http-equiv="refresh"' not in page.text
+        assert "const pending = true" in page.text

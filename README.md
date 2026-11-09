@@ -23,11 +23,34 @@ ingen duplikater: et utkast som finnes blir ikke overskrevet, og en installasjon
 som allerede er fakturert hoppes over. Slett utkastet i Fiken for å lage det på
 nytt med ny pris.
 
+## Zaptec
+
+Tjenesten bruker endepunktene som erstatter `GET /api/chargehistory`
+(fases ut 1. januar 2027). Zaptec-brukeren må være eier av installasjonene.
+
+- `GET /api/installation?Roles=2`: installasjonene brukeren eier.
+- `POST /api/chargehistory/installationreport`: totalt forbruk og antall
+  ladeøkter per installasjon, til oversikten.
+- `GET /api/sessions/archived`: ladeøktene, til PDF-grunnlaget og utkastene.
+
+En økt hører til måneden den ble avsluttet i (UTC), som før. Utkastet bruker
+summen av øktene, så fakturalinjen alltid stemmer med vedlegget.
+
+For å gjøre oversikten rask:
+
+- Installasjonene huskes i 15 minutter per bruker.
+- Totaler for måneder som ble avsluttet for mer enn 5 dager siden lagres i
+  databasen (bare tall). Inneværende måned huskes i 5 minutter.
+- Forbruk hentes for opptil fire installasjoner samtidig, over én gjenbrukt
+  forbindelse.
+- «Oppdater fra Zaptec» over tabellen henter alt på nytt.
+
 ## Personvern
 
 Tjenesten lagrer ikke kundenavn eller andre kundeopplysninger, bare Fikens
 kunde-id per foretak og Zaptec-installasjon. Navn hentes fra Fiken når siden
-vises. Sesjoner lagrer Zaptec-tokenet og brukerens e-post til sesjonen utløper.
+vises og huskes bare i minnet i noen minutter. Navn og e-post til de som har
+ladet (fra Zaptec) leses ikke inn og lagres aldri. Sesjoner lagrer Zaptec-tokenet og brukerens e-post til sesjonen utløper.
 
 Fiken-tilgangen er OAuth per bruker. Access- og refresh-token lagres kryptert
 med `SECRET_KEY`. «Koble fra Fiken» trekker tilbake tilgangen hos Fiken og

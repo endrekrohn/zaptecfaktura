@@ -2,9 +2,15 @@
 {% set period = (month | month_name) ~ " " ~ year %}
 {% set qs = "year=" ~ year ~ "&month=" ~ month ~ ("&nok_per_kwh=" ~ (nok_per_kwh | urlencode) if nok_per_kwh else "") %}
 {% block title %}{{ period }} · Zaptec-faktura{% endblock %}
-{% block head %}
-{% if pending %}<meta http-equiv="refresh" content="3" />{% endif %}
-{% endblock %}
+{% macro draft_cell(d) -%}
+{% if d %}
+<span class="status {{ d.css }}"{% if d.error %} title="{{ d.error }}"{% endif %}>{% if d.css %}<span class="dot"></span>{% endif %}{{ d.label }}</span>
+{% if d.draft_id %}<div class="muted small">Utkast #{{ d.draft_id }} · {{ "%.3f" | format(d.kwh) | replace(".", ",") }} kWh · {{ d.price }} kr/kWh</div>{% endif %}
+{% if d.error %}<div class="muted small">{{ d.error | truncate(120) }}</div>{% endif %}
+{% else %}
+<span class="muted small">Ikke opprettet</span>
+{% endif %}
+{%- endmacro %}
 {% block content %}
 <div class="page" style="max-width: none">
     <div class="container container-lg stack">
@@ -98,7 +104,10 @@
         </section>
 
         <div class="heading-wrapper">
-            <h2>Installasjoner</h2>
+            <div class="row">
+                <h2>Installasjoner</h2>
+                <a class="small" href="/?{{ qs }}&refresh=1" title="Hent installasjoner og forbruk på nytt fra Zaptec">Oppdater fra Zaptec</a>
+            </div>
             <div class="tally small">
                 {% if fiken_ready %}<span class="muted">Fiken: <a href="/fiken">{{ fiken_company }}</a></span>{% endif %}
                 <span class="status">{{ rows | length }} totalt</span>
@@ -126,14 +135,14 @@
                     </thead>
                     <tbody>
                         {% for row in rows %}
-                        {% set u = row.usage %}
+                        {% set u = row.total %}
                         <tr>
                             <td>
                                 <div style="font-weight: 600">{{ u.name }}</div>
-                                <div class="muted small">{{ u.sessions | length }} ladeøkter</div>
+                                <div class="muted small">{{ u.session_count }} ladeøkter</div>
                             </td>
-                            <td class="right nowrap">{{ "%.3f" | format(u.total_kwh) | replace(".", ",") }} kWh</td>
-                            <td class="right nowrap"><span class="amount" data-kwh="{{ u.total_kwh }}">–</span></td>
+                            <td class="right nowrap">{{ "%.3f" | format(u.kwh) | replace(".", ",") }} kWh</td>
+                            <td class="right nowrap"><span class="amount" data-kwh="{{ u.kwh }}">–</span></td>
                             {% if fiken_ready %}
                             <td>
                                 {% if row.customer %}
@@ -146,15 +155,7 @@
                                 <a href="/installations/{{ u.installation_id }}/customer?{{ qs }}">Velg kunde</a>
                                 {% endif %}
                             </td>
-                            <td>
-                                {% if row.status %}
-                                <span class="status {{ row.status[1] }}"{% if row.draft.error %} title="{{ row.draft.error }}"{% endif %}>{% if row.status[1] %}<span class="dot"></span>{% endif %}{{ row.status[0] }}</span>
-                                {% if row.draft.fiken_draft_id %}<div class="muted small">Utkast #{{ row.draft.fiken_draft_id }} · {{ row.draft.unit_price_ore | nok }} kr/kWh</div>{% endif %}
-                                {% if row.draft.error %}<div class="muted small">{{ row.draft.error | truncate(120) }}</div>{% endif %}
-                                {% else %}
-                                <span class="muted small">Ikke opprettet</span>
-                                {% endif %}
-                            </td>
+                            <td data-draft-cell="{{ u.installation_id }}">{{ draft_cell(row.draft) }}</td>
                             {% endif %}
                             <td class="col-actions">
                                 <button class="btn btn-ghost btn-sm" type="submit" form="price-form" formaction="/export"
@@ -206,6 +207,35 @@
         // Enter in the price field should not trigger a download or create drafts.
         price.addEventListener('keydown', (e) => { if (e.key === 'Enter') e.preventDefault(); });
         updateAmounts();
+
+        // While drafts are being created, poll the small status endpoint
+        // instead of reloading the whole page; reload once when done.
+        const pending = {{ 'true' if pending else 'false' }};
+        const statusUrl = '/drafts/status?year={{ year }}&month={{ month }}';
+        const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+        const kwhFmt = new Intl.NumberFormat('nb-NO', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+        function renderDraft(d) {
+            let html = `<span class="status ${esc(d.css)}">${d.css ? '<span class="dot"></span>' : ''}${esc(d.label)}</span>`;
+            if (d.draft_id) html += `<div class="muted small">Utkast #${esc(d.draft_id)} · ${kwhFmt.format(d.kwh)} kWh · ${esc(d.price)} kr/kWh</div>`;
+            if (d.error) html += `<div class="muted small">${esc(d.error.slice(0, 120))}</div>`;
+            return html;
+        }
+        async function poll() {
+            try {
+                const response = await fetch(statusUrl, { headers: { Accept: 'application/json' } });
+                if (!response.ok) throw new Error(response.status);
+                const data = await response.json();
+                for (const [id, d] of Object.entries(data.drafts)) {
+                    const cell = document.querySelector(`[data-draft-cell="${CSS.escape(id)}"]`);
+                    if (cell) cell.innerHTML = renderDraft(d);
+                }
+                if (!data.pending) return window.location.reload();
+            } catch (e) {
+                // Network hiccup: try again on the next tick.
+            }
+            setTimeout(poll, 2000);
+        }
+        if (pending) setTimeout(poll, 1500);
 
         const createButton = document.getElementById('create-drafts');
         if (createButton) {

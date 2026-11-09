@@ -1,6 +1,7 @@
 import io
 import logging
 import secrets
+import time
 import zipfile
 from contextlib import asynccontextmanager
 from datetime import date
@@ -8,24 +9,23 @@ from urllib.parse import urlencode
 
 import polars as pl
 from fastapi import BackgroundTasks, Depends, FastAPI, Form, Query, Request, Response
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+import httpx
+
 import database
 from billing import (
-    InstallationUsage,
     ValidationError,
-    month_range,
     nok_to_ore,
     parse_nok_per_kwh,
     pdf_filename,
     previous_month,
-    total_kwh,
     validate_period,
 )
 from config import BASE_DIR, settings
-from drafts import STATUSES, plan_drafts, run_draft_job
+from drafts import STATUSES, PlannedInstallation, plan_drafts, run_draft_job, usage_pdf
 from fiken_api import FikenAPI, FikenError
 from fiken_oauth import (
     FikenNotConnected,
@@ -34,7 +34,8 @@ from fiken_oauth import (
     FikenTokens,
     new_pkce_pair,
 )
-from invoice import format_month_to_norwegian, format_norwegian_accounting, generate_invoice_pdf
+from invoice import format_month_to_norwegian, format_norwegian_accounting
+from usage import UsageService
 from zaptec_api import ZaptecAPI, ZaptecAuthError, ZaptecError
 
 log = logging.getLogger(__name__)
@@ -44,10 +45,22 @@ OAUTH_COOKIE = "fiken_oauth"
 PUBLIC_PATHS = ("/static", "/login", "/health")
 
 zaptec_api = ZaptecAPI(settings.zaptec_api_url)
+usage_service = UsageService(zaptec_api)
 
-# Tests inject an httpx.MockTransport here (and reset _fiken_tokens).
+# Tests inject an httpx.MockTransport here (and reset _fiken_tokens/_fiken_http).
 fiken_transport = None
 _fiken_tokens: FikenTokens | None = None
+_fiken_http: httpx.AsyncClient | None = None
+
+CUSTOMERS_TTL = 5 * 60
+_customers_cache: dict[str, tuple[float, dict[int, dict]]] = {}
+
+
+def get_fiken_http() -> httpx.AsyncClient:
+    global _fiken_http
+    if _fiken_http is None or _fiken_http.is_closed:
+        _fiken_http = httpx.AsyncClient(transport=fiken_transport, timeout=30)
+    return _fiken_http
 
 
 def get_fiken_tokens() -> FikenTokens | None:
@@ -74,7 +87,7 @@ def fiken_client(user: str, company_slug: str | None = None) -> FikenAPI:
         settings.fiken_api_url,
         lambda force: tokens.access_token(user, force),
         company_slug,
-        transport=fiken_transport,
+        http=get_fiken_http(),
     )
 
 
@@ -89,6 +102,9 @@ async def lifespan(app: FastAPI):
             "or SECRET_KEY is missing: Fiken is disabled."
         )
     yield
+    await usage_service.zaptec.aclose()
+    if _fiken_http is not None:
+        await _fiken_http.aclose()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -228,7 +244,7 @@ async def login(request: Request, username: str = Form(...), password: str = For
         return _login_error(request, "Brukeren har ikke tilgang til tjenesten.", username)
 
     try:
-        token_data = await zaptec_api.login(username, password)
+        token_data = await usage_service.zaptec.login(username, password)
     except ZaptecAuthError:
         return _login_error(request, "Feil e-post eller passord.", username)
 
@@ -256,6 +272,9 @@ async def login(request: Request, username: str = Form(...), password: str = For
 async def logout(request: Request):
     session_id = request.cookies.get(SESSION_COOKIE)
     if session_id:
+        session = database.get_session(session_id)
+        if session:
+            usage_service.forget_user(session["user"])
         database.delete_session(session_id)
     return _redirect_to_login()
 
@@ -263,54 +282,40 @@ async def logout(request: Request):
 # --- usage ----------------------------------------------------------------
 
 
-async def load_installations(token: str) -> list[dict]:
-    installations = await zaptec_api.get_installations(token)
-    return sorted(installations, key=lambda i: (i.get("Name") or "").lower())
+async def load_customers(user: str, company_slug: str, fresh: bool = False) -> dict[int, dict]:
+    """Fiken customers by contact id, cached in memory (never on disk)."""
+    cached = _customers_cache.get(company_slug)
+    if cached and not fresh and cached[0] > time.monotonic():
+        return cached[1]
+    customers = await fiken_client(user, company_slug).list_customers()
+    by_id = {c["contactId"]: c for c in customers}
+    _customers_cache[company_slug] = (time.monotonic() + CUSTOMERS_TTL, by_id)
+    return by_id
 
 
-async def load_usage(
-    token: str, installation: dict, year: int, month: int
-) -> InstallationUsage:
-    from_date, to_date = month_range(year, month)
-    installation_id = installation.get("Id")
-    sessions = await zaptec_api.get_chargehistory(
-        token, installation_id, from_date, to_date
-    )
-    return InstallationUsage(
-        installation_id=installation_id,
-        name=installation.get("Name") or installation_id,
-        sessions=sessions,
-        total_kwh=total_kwh(sessions),
-    )
-
-
-async def load_all_usage(token: str, year: int, month: int) -> list[InstallationUsage]:
-    return [
-        await load_usage(token, installation, year, month)
-        for installation in await load_installations(token)
-    ]
-
-
-def usage_pdf(usage: InstallationUsage, year: int, month: int, unit_price_ore: int) -> bytes:
-    nok_per_kwh = unit_price_ore / 100
-    return generate_invoice_pdf(
-        usage.installation_id,
-        usage.name,
-        year,
-        month,
-        usage.sessions,
-        usage.total_kwh,
-        nok_per_kwh,
-        round(usage.total_kwh * nok_per_kwh, 2),
-    )
-
-
-async def load_customers(fiken: FikenAPI) -> dict[int, dict]:
-    customers = await fiken.list_customers()
-    return {c["contactId"]: c for c in customers}
+async def require_installation(token: str, user: str, installation_id: str) -> dict:
+    installation = await usage_service.find_installation(token, user, installation_id)
+    if installation is None:
+        raise PageError("Fant ikke installasjonen.", 404)
+    return installation
 
 
 # --- overview -------------------------------------------------------------
+
+
+def draft_status_view(draft: database.DraftRecord | None) -> dict | None:
+    if draft is None:
+        return None
+    label, css = STATUSES.get(draft.status, (draft.status, ""))
+    return {
+        "status": draft.status,
+        "label": label,
+        "css": css,
+        "draft_id": draft.fiken_draft_id,
+        "kwh": draft.kwh,
+        "price": format_norwegian_accounting(draft.unit_price_ore / 100),
+        "error": draft.error,
+    }
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -319,6 +324,7 @@ async def overview(
     year: int | None = Query(None),
     month: int | None = Query(None),
     nok_per_kwh: str | None = Query(None),
+    refresh: bool = Query(False),
     token: str = Depends(get_token),
     user: str = Depends(get_user),
 ):
@@ -326,7 +332,7 @@ async def overview(
         year, month = previous_month(date.today())
     validate_period(year, month)
 
-    usages = await load_all_usage(token, year, month)
+    totals = await usage_service.totals(token, user, year, month, refresh=refresh)
 
     connection = database.get_fiken_connection(user) if settings.fiken_enabled else None
     company_slug = connection.company_slug if connection else None
@@ -338,7 +344,7 @@ async def overview(
         mappings = database.get_customer_mappings(company_slug)
         drafts = database.get_drafts(company_slug, year, month)
         try:
-            customers = await load_customers(fiken_client(user, company_slug))
+            customers = await load_customers(user, company_slug, fresh=refresh)
         except FikenNotConnected:
             connection = company_slug = None
         except FikenError:
@@ -346,23 +352,21 @@ async def overview(
             fiken_error = "Kunne ikke hente kunder fra Fiken."
 
     rows = []
-    for usage in usages:
-        contact_id = mappings.get(usage.installation_id)
-        draft = drafts.get(usage.installation_id)
+    for total in totals:
+        contact_id = mappings.get(total.installation_id)
         rows.append(
             {
-                "usage": usage,
+                "total": total,
                 "contact_id": contact_id,
                 "customer": customers.get(contact_id) if contact_id else None,
-                "draft": draft,
-                "status": STATUSES.get(draft.status) if draft else None,
+                "draft": draft_status_view(drafts.get(total.installation_id)),
             }
         )
 
     # Only count a customer as ready when Fiken still knows it.
-    ready = sum(1 for r in rows if r["usage"].total_kwh > 0 and r["customer"])
-    missing = sum(1 for r in rows if r["usage"].total_kwh > 0 and not r["customer"])
-    pending = any(r["draft"] and r["draft"].status == "pending" for r in rows)
+    ready = sum(1 for r in rows if r["total"].kwh > 0 and r["customer"])
+    missing = sum(1 for r in rows if r["total"].kwh > 0 and not r["customer"])
+    pending = any(r["draft"] and r["draft"]["status"] == "pending" for r in rows)
 
     return templates.TemplateResponse(
         request,
@@ -396,17 +400,12 @@ async def export_usage(
     month: int = Form(...),
     nok_per_kwh: str = Form(...),
     token: str = Depends(get_token),
+    user: str = Depends(get_user),
 ):
     validate_period(year, month)
     unit_price_ore = nok_to_ore(parse_nok_per_kwh(nok_per_kwh))
-    installation = next(
-        (i for i in await load_installations(token) if i.get("Id") == installation_id),
-        None,
-    )
-    if installation is None:
-        raise PageError("Fant ikke installasjonen.", 404)
-
-    usage = await load_usage(token, installation, year, month)
+    installation = await require_installation(token, user, installation_id)
+    usage = await usage_service.usage(token, installation, year, month)
     return Response(
         usage_pdf(usage, year, month, unit_price_ore),
         media_type="application/pdf",
@@ -422,10 +421,11 @@ async def export_all_usage(
     month: int = Form(...),
     nok_per_kwh: str = Form(...),
     token: str = Depends(get_token),
+    user: str = Depends(get_user),
 ):
     validate_period(year, month)
     unit_price_ore = nok_to_ore(parse_nok_per_kwh(nok_per_kwh))
-    usages = await load_all_usage(token, year, month)
+    usages = await usage_service.all_usage(token, user, year, month)
 
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
@@ -486,9 +486,9 @@ async def create_drafts(
         raise PageError("Pris per kWh må være større enn 0.")
     unit_price_ore = nok_to_ore(price)
 
-    usages = await load_all_usage(token, year, month)
+    totals = await usage_service.totals(token, user, year, month)
     try:
-        customers = await load_customers(fiken)
+        customers = await load_customers(user, company_slug, fresh=True)
     except FikenError:
         log.exception("Could not load Fiken customers")
         raise PageError("Kunne ikke hente kunder fra Fiken. Prøv igjen senere.", 502)
@@ -499,22 +499,50 @@ async def create_drafts(
         for installation_id, contact_id in database.get_customer_mappings(company_slug).items()
         if contact_id in customers
     }
-    items = plan_drafts(company_slug, usages, mappings, year, month, unit_price_ore)
+    planned = [PlannedInstallation(t.installation_id, t.name, t.kwh) for t in totals]
+    items = plan_drafts(company_slug, planned, mappings, year, month, unit_price_ore)
     if items:
+        installations = {
+            i.get("Id"): i for i in await usage_service.installations(token, user)
+        }
+
+        async def load_usage(installation_id: str):
+            return await usage_service.usage(token, installations[installation_id], year, month)
+
         background_tasks.add_task(
-            run_draft_job, fiken, settings, company_slug, items, year, month, unit_price_ore
+            run_draft_job,
+            fiken,
+            settings,
+            company_slug,
+            items,
+            load_usage,
+            year,
+            month,
+            unit_price_ore,
         )
     return RedirectResponse(overview_url(year, month, nok_per_kwh), status_code=303)
 
 
+@app.get("/drafts/status")
+async def drafts_status(
+    year: int = Query(...), month: int = Query(...), user: str = Depends(get_user)
+):
+    """Lightweight status for polling while drafts are being created."""
+    validate_period(year, month)
+    connection = database.get_fiken_connection(user) if settings.fiken_enabled else None
+    if connection is None or not connection.company_slug:
+        return JSONResponse({"pending": False, "drafts": {}})
+    drafts = {
+        installation_id: draft_status_view(record)
+        for installation_id, record in database.get_drafts(
+            connection.company_slug, year, month
+        ).items()
+    }
+    pending = any(d["status"] == "pending" for d in drafts.values())
+    return JSONResponse({"pending": pending, "drafts": drafts})
+
+
 # --- customer mapping -----------------------------------------------------
-
-
-async def find_installation(token: str, installation_id: str) -> dict:
-    for installation in await load_installations(token):
-        if installation.get("Id") == installation_id:
-            return installation
-    raise PageError("Fant ikke installasjonen.", 404)
 
 
 def _matches(customer: dict, q: str) -> bool:
@@ -536,10 +564,11 @@ async def customer_picker(
     token: str = Depends(get_token),
     user: str = Depends(get_user),
 ):
-    fiken, company_slug = require_company(user)
+    _, company_slug = require_company(user)
     validate_period(year, month)
-    installation = await find_installation(token, installation_id)
-    customers = await fiken.list_customers()
+    installation = await require_installation(token, user, installation_id)
+    # Fresh list here, so newly created customers in Fiken show up.
+    customers = list((await load_customers(user, company_slug, fresh=True)).values())
     current_id = database.get_customer_mappings(company_slug).get(installation_id)
     current = next((c for c in customers if c["contactId"] == current_id), None)
     matches = [c for c in customers if not c.get("inactive") and _matches(c, q.strip())]
@@ -573,11 +602,11 @@ async def set_customer(
     token: str = Depends(get_token),
     user: str = Depends(get_user),
 ):
-    fiken, company_slug = require_company(user)
+    _, company_slug = require_company(user)
     validate_period(year, month)
-    await find_installation(token, installation_id)
-    customers = await fiken.list_customers()
-    if not any(c["contactId"] == contact_id for c in customers):
+    await require_installation(token, user, installation_id)
+    customers = await load_customers(user, company_slug, fresh=True)
+    if contact_id not in customers:
         raise PageError("Fant ikke kunden i Fiken.", 404)
     database.set_customer_mapping(company_slug, installation_id, contact_id)
     return RedirectResponse(overview_url(year, month, nok_per_kwh), status_code=303)
@@ -594,7 +623,7 @@ async def delete_customer(
 ):
     _, company_slug = require_company(user)
     validate_period(year, month)
-    await find_installation(token, installation_id)
+    await require_installation(token, user, installation_id)
     database.delete_customer_mapping(company_slug, installation_id)
     return RedirectResponse(overview_url(year, month, nok_per_kwh), status_code=303)
 

@@ -57,6 +57,16 @@ CREATE TABLE IF NOT EXISTS invoice_draft (
     updated_at REAL NOT NULL,
     PRIMARY KEY (company_slug, installation_id, year, month)
 );
+
+CREATE TABLE IF NOT EXISTS usage_total (
+    installation_id TEXT NOT NULL,
+    year INTEGER NOT NULL,
+    month INTEGER NOT NULL,
+    kwh REAL NOT NULL,
+    session_count INTEGER NOT NULL,
+    updated_at REAL NOT NULL,
+    PRIMARY KEY (installation_id, year, month)
+);
 """
 
 
@@ -291,4 +301,36 @@ def fail_unfinished_drafts() -> None:
             "UPDATE invoice_draft SET status = 'failed', error = ?, updated_at = ? "
             "WHERE status = 'pending'",
             ("Avbrutt fordi tjenesten ble startet på nytt. Prøv igjen.", time.time()),
+        )
+
+
+# --- usage totals cache ---------------------------------------------------
+# Totals per installation and closed month. Plain numbers, no personal data.
+
+
+def get_usage_totals(year: int, month: int) -> dict[str, tuple[float, int]]:
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT installation_id, kwh, session_count FROM usage_total "
+            "WHERE year = ? AND month = ?",
+            (year, month),
+        ).fetchall()
+    return {r["installation_id"]: (r["kwh"], r["session_count"]) for r in rows}
+
+
+def set_usage_total(
+    installation_id: str, year: int, month: int, kwh: float, session_count: int
+) -> None:
+    with get_db() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO usage_total VALUES (?, ?, ?, ?, ?, ?)",
+            (installation_id, year, month, kwh, session_count, time.time()),
+        )
+
+
+def delete_usage_totals(year: int, month: int, installation_ids: list[str]) -> None:
+    with get_db() as conn:
+        conn.executemany(
+            "DELETE FROM usage_total WHERE installation_id = ? AND year = ? AND month = ?",
+            [(i, year, month) for i in installation_ids],
         )

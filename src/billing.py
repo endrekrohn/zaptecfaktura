@@ -7,9 +7,11 @@ kWh in whole øre, so the PDF attachment always matches the Fiken invoice line.
 import re
 import uuid
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
+
+from zaptec_api import ChargeSession
 
 # Fixed namespace so the same installation and month always gets the same
 # draft UUID. Fiken stores it on the draft and on the invoice made from it.
@@ -26,7 +28,7 @@ class ValidationError(ValueError):
 class InstallationUsage:
     installation_id: str
     name: str
-    sessions: list[dict[str, Any]]
+    sessions: list[ChargeSession]
     total_kwh: float
 
 
@@ -41,19 +43,38 @@ def validate_period(year: int, month: int) -> None:
         raise ValidationError("Ugyldig periode")
 
 
-def month_range(year: int, month: int) -> tuple[str, str]:
-    """Return the Zaptec From/To timestamps for a calendar month (UTC)."""
+def month_bounds(year: int, month: int) -> tuple[datetime, datetime]:
+    """Start (inclusive) and end (exclusive) of a calendar month, in UTC.
+
+    Sessions belong to the month in which they ended, as before.
+    """
     validate_period(year, month)
-    from_date = f"{year}-{month:02d}-01T00:00:00Z"
-    if month == 12:
-        to_date = f"{year + 1}-01-01T00:00:00Z"
-    else:
-        to_date = f"{year}-{month + 1:02d}-01T00:00:00Z"
-    return from_date, to_date
+    start = datetime(year, month, 1)
+    end = datetime(year + 1, 1, 1) if month == 12 else datetime(year, month + 1, 1)
+    return start, end
 
 
-def total_kwh(sessions: list[dict[str, Any]]) -> float:
-    return round(sum(s.get("Energy", 0) or 0 for s in sessions), 3)
+def total_kwh(sessions: list[ChargeSession]) -> float:
+    return round(sum(s.energy for s in sessions), 3)
+
+
+def _pdf_time(value: datetime | None) -> str:
+    return value.isoformat() if value else "N/A"
+
+
+def pdf_sessions(sessions: list[ChargeSession]) -> list[dict[str, Any]]:
+    """Session rows for the PDF, in the shape and order the PDF has always
+    used: newest first, times in UTC, energy as reported by Zaptec."""
+    ordered = sorted(sessions, key=lambda s: s.start or datetime.min, reverse=True)
+    return [
+        {
+            "StartDateTime": _pdf_time(s.start),
+            "EndDateTime": _pdf_time(s.end),
+            "DeviceName": s.device_name or "N/A",
+            "Energy": s.energy,
+        }
+        for s in ordered
+    ]
 
 
 def parse_nok_per_kwh(value: str | float) -> Decimal:

@@ -1,13 +1,20 @@
-"""Create Fiken invoice drafts for one month, one installation at a time."""
+"""Create Fiken invoice drafts for one month, one installation at a time.
+
+The request only plans the work (from the overview totals) and returns. The
+background job then fetches each installation's sessions from Zaptec,
+generates the PDF and creates the draft, so the invoice line and the
+attachment are always built from the same sessions.
+"""
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
 import database
-from billing import InstallationUsage, draft_uuid, pdf_filename
+from billing import InstallationUsage, draft_uuid, pdf_filename, pdf_sessions
 from config import Settings
 from fiken_api import FikenAPI
 from fiken_oauth import FikenNotConnected
@@ -30,17 +37,29 @@ STATUSES: dict[str, tuple[str, str]] = {
     "failed": ("Feilet", "s-err"),
 }
 
+# Fetches one installation's sessions for the month.
+UsageLoader = Callable[[str], Awaitable[InstallationUsage]]
+
 
 @dataclass
 class DraftJobItem:
-    usage: InstallationUsage
+    installation_id: str
+    name: str
+    kwh: float  # from the overview; the job uses the sessions' sum
     fiken_contact_id: int
     draft_uuid: str
 
 
+@dataclass
+class PlannedInstallation:
+    installation_id: str
+    name: str
+    kwh: float
+
+
 def plan_drafts(
     company_slug: str,
-    usages: list[InstallationUsage],
+    installations: list[PlannedInstallation],
     mappings: dict[str, int],
     year: int,
     month: int,
@@ -48,25 +67,25 @@ def plan_drafts(
 ) -> list[DraftJobItem]:
     """Record a status for every installation and return the ones to create."""
     items: list[DraftJobItem] = []
-    for usage in usages:
-        uid = draft_uuid(usage.installation_id, year, month)
-        contact_id = mappings.get(usage.installation_id)
-        if usage.total_kwh <= 0:
+    for inst in installations:
+        uid = draft_uuid(inst.installation_id, year, month)
+        contact_id = mappings.get(inst.installation_id)
+        if inst.kwh <= 0:
             status = "skipped"
         elif contact_id is None:
             status = "missing_customer"
         else:
             status = "pending"
-            items.append(DraftJobItem(usage, contact_id, uid))
+            items.append(DraftJobItem(inst.installation_id, inst.name, inst.kwh, contact_id, uid))
         database.upsert_draft(
             database.DraftRecord(
                 company_slug=company_slug,
-                installation_id=usage.installation_id,
+                installation_id=inst.installation_id,
                 year=year,
                 month=month,
                 draft_uuid=uid,
                 fiken_contact_id=contact_id,
-                kwh=usage.total_kwh,
+                kwh=inst.kwh,
                 unit_price_ore=unit_price_ore,
                 status=status,
             )
@@ -77,6 +96,7 @@ def plan_drafts(
 def build_draft_body(
     settings: Settings,
     item: DraftJobItem,
+    usage: InstallationUsage,
     year: int,
     month: int,
     unit_price_ore: int,
@@ -85,7 +105,7 @@ def build_draft_body(
     month_name = format_month_to_norwegian(month) or f"{month:02d}"
     line: dict[str, Any] = {
         "description": f"Strømforbruk elbillading {month_name} {year} (kWh)",
-        "quantity": item.usage.total_kwh,
+        "quantity": usage.total_kwh,
         "unitPrice": unit_price_ore,
     }
     if settings.fiken_product_id is not None:
@@ -100,24 +120,25 @@ def build_draft_body(
         "daysUntilDueDate": settings.fiken_days_until_due,
         "issueDate": issue_date.isoformat(),
         "invoiceText": (
-            f"Strømforbruk for elbillading på {item.usage.name}, "
+            f"Strømforbruk for elbillading på {usage.name}, "
             f"{month_name} {year}. Se vedlagt grunnlag."
         ),
         "lines": [line],
     }
 
 
-def _pdf(item: DraftJobItem, year: int, month: int, unit_price_ore: int) -> bytes:
+def usage_pdf(usage: InstallationUsage, year: int, month: int, unit_price_ore: int) -> bytes:
+    """The usage PDF (fakturagrunnlag). Same layout and numbers as before."""
     nok_per_kwh = unit_price_ore / 100
     return generate_invoice_pdf(
-        item.usage.installation_id,
-        item.usage.name,
+        usage.installation_id,
+        usage.name,
         year,
         month,
-        item.usage.sessions,
-        item.usage.total_kwh,
+        pdf_sessions(usage.sessions),
+        usage.total_kwh,
         nok_per_kwh,
-        round(item.usage.total_kwh * nok_per_kwh, 2),
+        round(usage.total_kwh * nok_per_kwh, 2),
     )
 
 
@@ -125,30 +146,39 @@ async def _create_one(
     fiken: FikenAPI,
     settings: Settings,
     item: DraftJobItem,
+    load_usage: UsageLoader,
     year: int,
     month: int,
     unit_price_ore: int,
-) -> tuple[str, int | None]:
-    """Create the draft unless Fiken already has it. Returns (status, draft id)."""
-    if await fiken.find_invoice_from_draft(item.draft_uuid):
-        return "invoiced", None
+) -> tuple[str, int | None, float | None]:
+    """Create the draft unless Fiken already has it.
 
-    filename = pdf_filename(year, month, item.usage.name)
+    Returns (status, draft id, invoiced kWh).
+    """
+    if await fiken.find_invoice_from_draft(item.draft_uuid):
+        return "invoiced", None, None
+
     existing = await fiken.find_draft(item.draft_uuid)
     if existing:
         # Never overwrite a draft the user may have edited. Only add the PDF
         # if an earlier run failed between creating the draft and attaching it.
         draft_id = existing["draftId"]
         if not existing.get("attachments"):
-            pdf = _pdf(item, year, month, unit_price_ore)
-            await fiken.add_draft_attachment(draft_id, filename, pdf)
-        return "exists", draft_id
+            usage = await load_usage(item.installation_id)
+            pdf = usage_pdf(usage, year, month, unit_price_ore)
+            await fiken.add_draft_attachment(
+                draft_id, pdf_filename(year, month, usage.name), pdf
+            )
+        return "exists", draft_id, None
 
-    body = build_draft_body(settings, item, year, month, unit_price_ore, date.today())
+    usage = await load_usage(item.installation_id)
+    if usage.total_kwh <= 0:
+        return "skipped", None, usage.total_kwh
+    body = build_draft_body(settings, item, usage, year, month, unit_price_ore, date.today())
     draft_id = await fiken.create_invoice_draft(body)
-    pdf = _pdf(item, year, month, unit_price_ore)
-    await fiken.add_draft_attachment(draft_id, filename, pdf)
-    return "created", draft_id
+    pdf = usage_pdf(usage, year, month, unit_price_ore)
+    await fiken.add_draft_attachment(draft_id, pdf_filename(year, month, usage.name), pdf)
+    return "created", draft_id, usage.total_kwh
 
 
 async def run_draft_job(
@@ -156,6 +186,7 @@ async def run_draft_job(
     settings: Settings,
     company_slug: str,
     items: list[DraftJobItem],
+    load_usage: UsageLoader,
     year: int,
     month: int,
     unit_price_ore: int,
@@ -166,12 +197,12 @@ async def run_draft_job(
         for item in items:
             record = database.DraftRecord(
                 company_slug=company_slug,
-                installation_id=item.usage.installation_id,
+                installation_id=item.installation_id,
                 year=year,
                 month=month,
                 draft_uuid=item.draft_uuid,
                 fiken_contact_id=item.fiken_contact_id,
-                kwh=item.usage.total_kwh,
+                kwh=item.kwh,
                 unit_price_ore=unit_price_ore,
                 status="pending",
             )
@@ -180,19 +211,19 @@ async def run_draft_job(
                 database.upsert_draft(record)
                 continue
             try:
-                status, draft_id = await _create_one(
-                    fiken, settings, item, year, month, unit_price_ore
+                status, draft_id, kwh = await _create_one(
+                    fiken, settings, item, load_usage, year, month, unit_price_ore
                 )
                 record.status = status
                 record.fiken_draft_id = draft_id
+                if kwh is not None:
+                    record.kwh = kwh
             except FikenNotConnected:
                 # Consent revoked mid-run: the rest would fail the same way.
                 lost_connection = True
                 record.status, record.error = "failed", not_connected
             except Exception as e:  # keep going with the next installation
-                log.exception(
-                    "Draft for installation %s failed", item.usage.installation_id
-                )
+                log.exception("Draft for installation %s failed", item.installation_id)
                 record.status = "failed"
                 record.error = str(e)[:500]
             database.upsert_draft(record)

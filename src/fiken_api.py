@@ -41,11 +41,15 @@ class FikenAPI:
         token_provider: TokenProvider,
         company_slug: str | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
+        http: httpx.AsyncClient | None = None,
     ):
         self.base_url = base_url.rstrip("/")
         self.company_path = f"/companies/{company_slug}" if company_slug else None
         self._token_provider = token_provider
         self._transport = transport
+        # A shared client keeps connections (and TLS sessions) alive between
+        # requests. Without one, each request opens its own connection.
+        self._http = http
 
     async def _send(self, method: str, path: str, token: str, **kwargs) -> httpx.Response:
         headers = {
@@ -58,10 +62,15 @@ class FikenAPI:
                 wait = cls._last_request + MIN_INTERVAL - time.monotonic()
                 if wait > 0:
                     await asyncio.sleep(wait)
-                async with httpx.AsyncClient(
-                    base_url=self.base_url, transport=self._transport, timeout=30
-                ) as client:
-                    response = await client.request(method, path, headers=headers, **kwargs)
+                if self._http is not None:
+                    response = await self._http.request(
+                        method, self.base_url + path, headers=headers, **kwargs
+                    )
+                else:
+                    async with httpx.AsyncClient(
+                        base_url=self.base_url, transport=self._transport, timeout=30
+                    ) as client:
+                        response = await client.request(method, path, headers=headers, **kwargs)
                 cls._last_request = time.monotonic()
                 if response.status_code == 429 and attempt < MAX_RETRIES:
                     await asyncio.sleep(2**attempt)
