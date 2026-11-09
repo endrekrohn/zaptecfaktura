@@ -15,7 +15,6 @@ from typing import Any
 
 import database
 from billing import InstallationUsage, draft_uuid, pdf_filename, pdf_sessions
-from config import Settings
 from fiken_api import FikenAPI
 from fiken_oauth import FikenNotConnected
 from invoice import format_month_to_norwegian, generate_invoice_pdf
@@ -36,6 +35,32 @@ STATUSES: dict[str, tuple[str, str]] = {
     "missing_customer": ("Mangler kunde", "s-warn"),
     "failed": ("Feilet", "s-err"),
 }
+
+# VAT types Fiken accepts on sales lines, with labels for the settings page.
+SALES_VAT_TYPES: dict[str, str] = {
+    "HIGH": "Høy sats (25 %)",
+    "MEDIUM": "Middels sats (15 %)",
+    "LOW": "Lav sats (12 %)",
+    "RAW_FISH": "Råfisk (11,11 %)",
+    "NONE": "Ingen mva-behandling",
+    "EXEMPT": "Fritatt for mva",
+    "OUTSIDE": "Utenfor avgiftsområdet",
+    "EXEMPT_IMPORT_EXPORT": "Fritatt, utførsel av varer og tjenester",
+    "EXEMPT_REVERSE": "Fritatt, omvendt avgiftsplikt",
+}
+
+# Sales income accounts in the Norwegian standard chart of accounts.
+INCOME_ACCOUNT_RANGE = (3000, 3999)
+
+
+@dataclass(frozen=True)
+class InvoiceSettings:
+    """Per-company defaults for the invoice line, set under /fiken/innstillinger."""
+
+    income_account: str
+    vat_type: str
+    days_until_due: int
+
 
 # Statuses where the draft exists in Fiken and can be opened there.
 OPENABLE_STATUSES = {"created", "exists"}
@@ -103,7 +128,7 @@ def plan_drafts(
 
 
 def build_draft_body(
-    settings: Settings,
+    invoice: InvoiceSettings,
     item: DraftJobItem,
     usage: InstallationUsage,
     year: int,
@@ -116,17 +141,14 @@ def build_draft_body(
         "description": f"Strømforbruk elbillading {month_name} {year} (kWh)",
         "quantity": usage.total_kwh,
         "unitPrice": unit_price_ore,
+        "vatType": invoice.vat_type,
+        "incomeAccount": invoice.income_account,
     }
-    if settings.fiken_product_id is not None:
-        line["productId"] = settings.fiken_product_id
-    else:
-        line["vatType"] = settings.fiken_vat_type
-        line["incomeAccount"] = settings.fiken_income_account
     return {
         "type": "invoice",
         "uuid": item.draft_uuid,
         "customerId": item.fiken_contact_id,
-        "daysUntilDueDate": settings.fiken_days_until_due,
+        "daysUntilDueDate": invoice.days_until_due,
         "issueDate": issue_date.isoformat(),
         "invoiceText": (
             f"Strømforbruk for elbillading på {usage.name}, "
@@ -153,7 +175,7 @@ def usage_pdf(usage: InstallationUsage, year: int, month: int, unit_price_ore: i
 
 async def _create_one(
     fiken: FikenAPI,
-    settings: Settings,
+    invoice: InvoiceSettings,
     item: DraftJobItem,
     load_usage: UsageLoader,
     year: int,
@@ -183,7 +205,7 @@ async def _create_one(
     usage = await load_usage(item.installation_id)
     if usage.total_kwh <= 0:
         return "skipped", None, usage.total_kwh
-    body = build_draft_body(settings, item, usage, year, month, unit_price_ore, date.today())
+    body = build_draft_body(invoice, item, usage, year, month, unit_price_ore, date.today())
     draft_id = await fiken.create_invoice_draft(body)
     pdf = usage_pdf(usage, year, month, unit_price_ore)
     await fiken.add_draft_attachment(draft_id, pdf_filename(year, month, usage.name), pdf)
@@ -192,7 +214,7 @@ async def _create_one(
 
 async def run_draft_job(
     fiken: FikenAPI,
-    settings: Settings,
+    invoice: InvoiceSettings,
     company_slug: str,
     items: list[DraftJobItem],
     load_usage: UsageLoader,
@@ -221,7 +243,7 @@ async def run_draft_job(
                 continue
             try:
                 status, draft_id, kwh = await _create_one(
-                    fiken, settings, item, load_usage, year, month, unit_price_ore
+                    fiken, invoice, item, load_usage, year, month, unit_price_ore
                 )
                 record.status = status
                 record.fiken_draft_id = draft_id

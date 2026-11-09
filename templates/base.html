@@ -21,7 +21,20 @@
                 {% if user %}
                 <div class="row">
                     <span class="muted small user-email">{{ user }}</span>
-                    {% if fiken_configured() %}<a class="btn btn-ghost btn-sm" href="/fiken">Fiken</a>{% endif %}
+                    {% if fiken_configured() %}
+                    <div class="menu" data-menu>
+                        <button class="btn btn-ghost btn-sm" type="button" aria-haspopup="menu"
+                            aria-expanded="false" data-menu-trigger>Fiken <span aria-hidden="true">▾</span></button>
+                        <div class="menu-panel" role="menu" hidden data-menu-panel>
+                            <a class="menu-item" role="menuitem" href="/fiken"><span
+                                    class="menu-item-text">Tilkobling</span><span class="menu-arrow">›</span></a>
+                            {% if fiken_company_selected(user) %}
+                            <a class="menu-item" role="menuitem" href="/fiken/innstillinger"><span
+                                    class="menu-item-text">Fakturainnstillinger</span><span class="menu-arrow">›</span></a>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
                     <form method="post" action="/logout">
                         <button class="btn btn-ghost btn-sm" type="submit">Logg ut</button>
                     </form>
@@ -30,5 +43,26 @@
             </div>
         </header>
         {% block content %}{% endblock %}
+        <script>
+            // Menus in the top bar: toggle on click, close on outside click or Esc.
+            document.querySelectorAll('[data-menu]').forEach((menu) => {
+                const trigger = menu.querySelector('[data-menu-trigger]');
+                const panel = menu.querySelector('[data-menu-panel]');
+                const setOpen = (open) => {
+                    panel.hidden = !open;
+                    trigger.setAttribute('aria-expanded', String(open));
+                };
+                trigger.addEventListener('click', () => setOpen(panel.hidden));
+                document.addEventListener('pointerdown', (e) => {
+                    if (!panel.hidden && !menu.contains(e.target)) setOpen(false);
+                });
+                document.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape' && !panel.hidden) {
+                        setOpen(false);
+                        trigger.focus();
+                    }
+                });
+            });
+        </script>
     </body>
 </html>

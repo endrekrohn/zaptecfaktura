@@ -136,6 +136,29 @@ class FikenAPI:
             if page >= page_count:
                 return customers
 
+    # --- accounts ---------------------------------------------------------
+
+    async def list_accounts(self, from_account: int, to_account: int) -> list[dict[str, Any]]:
+        """Bookkeeping accounts (code, name) in a range, for the current year."""
+        accounts: list[dict[str, Any]] = []
+        page = 0
+        while True:
+            response = await self._request(
+                "GET",
+                f"{self._company()}/accounts",
+                params={
+                    "fromAccount": from_account,
+                    "toAccount": to_account,
+                    "page": page,
+                    "pageSize": PAGE_SIZE,
+                },
+            )
+            accounts.extend(response.json())
+            page_count = int(response.headers.get("Fiken-Api-Page-Count", "1"))
+            page += 1
+            if page >= page_count:
+                return accounts
+
     # --- invoice drafts ---------------------------------------------------
 
     async def find_draft(self, draft_uuid: str) -> dict[str, Any] | None:

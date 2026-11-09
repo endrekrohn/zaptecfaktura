@@ -173,7 +173,9 @@
         </div>
         {% if fiken_ready %}
         <p class="muted small" style="margin: 0">
-            Utkastene legges i Fiken med grunnlaget som vedlegg. Kontroller og send dem fra Fiken.
+            Utkastene lages med grunnlaget som vedlegg: inntektskonto {{ invoice_settings.income_account }} ·
+            {{ vat_label(invoice_settings.vat_type) }} · {{ invoice_settings.days_until_due }} dagers forfall
+            (<a href="/fiken/innstillinger">endre</a>). Kontroller og send dem fra Fiken.
             Et utkast som allerede finnes for samme måned blir ikke overskrevet. Slett det i Fiken for å lage det på nytt.
         </p>
         {% endif %}

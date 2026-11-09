@@ -26,8 +26,11 @@ from billing import (
 )
 from config import BASE_DIR, settings
 from drafts import (
+    INCOME_ACCOUNT_RANGE,
     OPENABLE_STATUSES,
+    SALES_VAT_TYPES,
     STATUSES,
+    InvoiceSettings,
     PlannedInstallation,
     draft_url,
     plan_drafts,
@@ -123,6 +126,17 @@ templates.env.filters["month_name"] = lambda m: (format_month_to_norwegian(m) or
 templates.env.globals["fiken_configured"] = lambda: settings.fiken_enabled
 
 
+def fiken_company_selected(user: str | None) -> bool:
+    if not (user and settings.fiken_enabled):
+        return False
+    connection = database.get_fiken_connection(user)
+    return bool(connection and connection.company_slug)
+
+
+templates.env.globals["fiken_company_selected"] = fiken_company_selected
+templates.env.globals["vat_label"] = lambda vat: SALES_VAT_TYPES.get(vat, vat)
+
+
 class PageError(Exception):
     def __init__(self, message: str, status_code: int = 400):
         self.message = message
@@ -214,6 +228,22 @@ def require_company(user: str) -> tuple[FikenAPI, str]:
     if connection is None or not connection.company_slug:
         raise FikenSetupRequired()
     return fiken_client(user, connection.company_slug), connection.company_slug
+
+
+def invoice_settings_for(company_slug: str) -> tuple[InvoiceSettings, bool]:
+    """The company's invoice settings, or the server defaults. Also returns
+    whether the company has saved its own settings."""
+    row = database.get_invoice_settings(company_slug)
+    if row:
+        return InvoiceSettings(row["income_account"], row["vat_type"], row["days_until_due"]), True
+    return (
+        InvoiceSettings(
+            settings.fiken_income_account,
+            settings.fiken_vat_type,
+            settings.fiken_days_until_due,
+        ),
+        False,
+    )
 
 
 def overview_url(year: int, month: int, nok_per_kwh: str | None = None) -> str:
@@ -397,6 +427,7 @@ async def overview(
             # Connected with a company chosen: drafts can be created.
             "fiken_ready": bool(company_slug),
             "fiken_company": connection.company_name if company_slug else None,
+            "invoice_settings": invoice_settings_for(company_slug)[0] if company_slug else None,
             "fiken_error": fiken_error,
             "years": range(date.today().year, 2019, -1),
         },
@@ -525,7 +556,7 @@ async def create_drafts(
         background_tasks.add_task(
             run_draft_job,
             fiken,
-            settings,
+            invoice_settings_for(company_slug)[0],
             company_slug,
             items,
             load_usage,
@@ -731,8 +762,15 @@ async def fiken_callback(
         return _fiken_redirect("no_company")
     if len(companies) == 1 and companies[0].get("hasApiAccess", True):
         database.set_fiken_company(user, companies[0]["slug"], companies[0]["name"])
-        return _fiken_redirect(to="/")
+        return _fiken_redirect(to=after_company_selected(companies[0]["slug"]))
     return _fiken_redirect(to="/fiken/company")
+
+
+def after_company_selected(company_slug: str) -> str:
+    """First time a company is connected, go to its invoice settings."""
+    if database.get_invoice_settings(company_slug) is None:
+        return "/fiken/innstillinger?welcome=1"
+    return "/"
 
 
 @app.get("/fiken/company", response_class=HTMLResponse)
@@ -760,7 +798,7 @@ async def fiken_select_company(slug: str = Form(...), user: str = Depends(get_us
     if company is None:
         raise PageError("Fant ikke foretaket i Fiken.", 404)
     database.set_fiken_company(user, company["slug"], company["name"])
-    return RedirectResponse("/", status_code=303)
+    return RedirectResponse(after_company_selected(company["slug"]), status_code=303)
 
 
 @app.post("/fiken/disconnect")
@@ -768,3 +806,91 @@ async def fiken_disconnect(user: str = Depends(get_user)):
     tokens = _require_fiken_enabled()
     await tokens.disconnect(user)
     return RedirectResponse("/fiken", status_code=303)
+
+
+# --- invoice settings -----------------------------------------------------
+
+
+async def load_income_accounts(user: str, company_slug: str) -> list[dict]:
+    fiken = fiken_client(user, company_slug)
+    accounts = await fiken.list_accounts(*INCOME_ACCOUNT_RANGE)
+    return sorted(accounts, key=lambda a: str(a.get("code")))
+
+
+def _render_invoice_settings(
+    request: Request,
+    user: str,
+    connection: database.FikenConnection,
+    current: InvoiceSettings,
+    saved: bool,
+    accounts: list[dict],
+    message: str | None = None,
+    error: str | None = None,
+    status_code: int = 200,
+) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request,
+        "invoice_settings.html",
+        {
+            "user": user,
+            "company_name": connection.company_name,
+            "current": current,
+            "saved": saved,
+            "accounts": accounts,
+            "vat_types": SALES_VAT_TYPES,
+            "message": message,
+            "error": error,
+        },
+        status_code=status_code,
+    )
+
+
+@app.get("/fiken/innstillinger", response_class=HTMLResponse)
+async def invoice_settings_page(
+    request: Request,
+    welcome: bool = Query(False),
+    saved_now: bool = Query(False, alias="saved"),
+    user: str = Depends(get_user),
+):
+    _, company_slug = require_company(user)
+    connection = database.get_fiken_connection(user)
+    current, saved = invoice_settings_for(company_slug)
+    message = None
+    if welcome:
+        message = "Fiken er tilkoblet. Velg standardinnstillingene for fakturautkastene."
+    elif saved_now:
+        message = "Innstillingene er lagret. De gjelder for nye utkast."
+    accounts = await load_income_accounts(user, company_slug)
+    return _render_invoice_settings(request, user, connection, current, saved, accounts, message)
+
+
+@app.post("/fiken/innstillinger", response_class=HTMLResponse)
+async def save_invoice_settings(
+    request: Request,
+    income_account: str = Form(...),
+    vat_type: str = Form(...),
+    days_until_due: int = Form(...),
+    user: str = Depends(get_user),
+):
+    _, company_slug = require_company(user)
+    connection = database.get_fiken_connection(user)
+    accounts = await load_income_accounts(user, company_slug)
+    submitted = InvoiceSettings(income_account.strip(), vat_type, days_until_due)
+
+    error = None
+    if submitted.income_account not in {str(a.get("code")) for a in accounts}:
+        error = "Velg en inntektskonto fra listen."
+    elif submitted.vat_type not in SALES_VAT_TYPES:
+        error = "Velg en gyldig mva-type."
+    elif not 0 <= submitted.days_until_due <= 365:
+        error = "Forfall må være mellom 0 og 365 dager."
+    if error:
+        saved = database.get_invoice_settings(company_slug) is not None
+        return _render_invoice_settings(
+            request, user, connection, submitted, saved, accounts, error=error, status_code=400
+        )
+
+    database.set_invoice_settings(
+        company_slug, submitted.income_account, submitted.vat_type, submitted.days_until_due
+    )
+    return RedirectResponse("/fiken/innstillinger?saved=1", status_code=303)

@@ -43,6 +43,11 @@ class FakeFiken:
             {"contactId": 11, "name": "Ola Nordmann", "customerNumber": 10001, "customer": True},
             {"contactId": 22, "name": "Kari Hansen AS", "organizationNumber": "999888777", "customer": True},
         ]
+        self.accounts = [
+            {"code": "3000", "name": "Salgsinntekt, avgiftspliktig"},
+            {"code": "3100", "name": "Salgsinntekt, avgiftsfri"},
+            {"code": "3600", "name": "Leieinntekt fast eiendom"},
+        ]
         self.drafts: list[dict] = []
         self.invoices: list[dict] = []
         self.requests: list[httpx.Request] = []
@@ -114,6 +119,9 @@ class FakeFiken:
         assert path.startswith("/companies/test-as/"), path
         path = path.removeprefix("/companies/test-as")
 
+        if request.method == "GET" and path == "/accounts":
+            assert params["fromAccount"] == "3000" and params["toAccount"] == "3999"
+            return httpx.Response(200, json=self.accounts, headers={"Fiken-Api-Page-Count": "1"})
         if request.method == "GET" and path == "/contacts":
             return httpx.Response(200, json=self.customers, headers={"Fiken-Api-Page-Count": "1"})
         if request.method == "GET" and path == "/invoices/drafts":

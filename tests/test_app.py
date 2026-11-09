@@ -163,7 +163,8 @@ def test_connect_fiken_with_single_company(make_client, fake_fiken, tmp_path):
         login(client)
         response = connect_fiken(client, fake_fiken)
         assert response.status_code == 303
-        assert response.headers["location"] == "/"
+        # First connection goes to the invoice settings.
+        assert response.headers["location"] == "/fiken/innstillinger?welcome=1"
 
         connection = database.get_fiken_connection(USER)
         assert connection.company_slug == "test-as"
@@ -425,3 +426,86 @@ def test_pending_page_polls_instead_of_reloading(make_client, fake_fiken):
         page = client.get("/?year=2026&month=10")
         assert 'http-equiv="refresh"' not in page.text
         assert "const pending = true" in page.text
+
+
+# --- invoice settings ----------------------------------------------------
+
+
+def test_invoice_settings_need_a_connection(make_client):
+    with make_client() as client:
+        login(client)
+        response = client.get("/fiken/innstillinger", follow_redirects=False)
+        assert response.headers["location"] == "/fiken"
+
+
+def test_fiken_menu_shows_settings_once_connected(make_client, fake_fiken):
+    with make_client() as client:
+        login(client)
+        page = client.get("/?year=2026&month=10")
+        assert 'data-menu-trigger' in page.text and 'href="/fiken/innstillinger"' not in page.text
+        connect_fiken(client, fake_fiken)
+        page = client.get("/?year=2026&month=10")
+        assert 'href="/fiken/innstillinger"' in page.text
+
+
+def test_save_invoice_settings_and_use_them(make_client, fake_fiken):
+    with make_client() as client:
+        login(client)
+        connect_fiken(client, fake_fiken)
+
+        page = client.get("/fiken/innstillinger?welcome=1")
+        assert "Fiken er tilkoblet" in page.text
+        assert "3000 Salgsinntekt, avgiftspliktig" in page.text
+        assert 'value="3600"' in page.text and "Høy sats (25 %)" in page.text
+
+        response = client.post(
+            "/fiken/innstillinger",
+            data={"income_account": "3600", "vat_type": "EXEMPT", "days_until_due": 30},
+            follow_redirects=False,
+        )
+        assert response.headers["location"] == "/fiken/innstillinger?saved=1"
+        assert tuple(database.get_invoice_settings("test-as")) == ("3600", "EXEMPT", 30)
+        page = client.get("/fiken/innstillinger?saved=1")
+        assert '<option value="3600" selected>' in page.text
+        assert '<option value="EXEMPT" selected>' in page.text
+
+        overview = client.get("/?year=2026&month=10")
+        assert "inntektskonto 3600 ·" in overview.text and "Fritatt for mva ·" in overview.text
+
+        client.post("/installations/inst-a/customer", data={"contact_id": 11, "year": 2026, "month": 10})
+        client.post("/drafts", data={"year": 2026, "month": 10, "nok_per_kwh": "1.5"})
+        draft = fake_fiken.drafts[0]
+        assert draft["daysUntilDueDate"] == 30
+        assert draft["lines"][0]["incomeAccount"] == "3600"
+        assert draft["lines"][0]["vatType"] == "EXEMPT"
+
+        # Reconnecting later goes straight to the overview.
+        client.post("/fiken/disconnect")
+        assert connect_fiken(client, fake_fiken).headers["location"] == "/"
+
+
+@pytest.mark.parametrize(
+    "data,message",
+    [
+        ({"income_account": "1920", "vat_type": "HIGH", "days_until_due": 14}, "inntektskonto fra listen"),
+        ({"income_account": "3000", "vat_type": "HIGH_DIRECT", "days_until_due": 14}, "gyldig mva-type"),
+        ({"income_account": "3000", "vat_type": "HIGH", "days_until_due": 400}, "mellom 0 og 365"),
+    ],
+)
+def test_invalid_invoice_settings_are_rejected(make_client, fake_fiken, data, message):
+    with make_client() as client:
+        login(client)
+        connect_fiken(client, fake_fiken)
+        response = client.post("/fiken/innstillinger", data=data)
+        assert response.status_code == 400
+        assert message in response.text
+        assert database.get_invoice_settings("test-as") is None
+
+
+def test_defaults_are_used_until_settings_are_saved(make_client, fake_fiken):
+    with make_client(fiken_income_account="3100", fiken_vat_type="NONE") as client:
+        login(client)
+        connect_fiken(client, fake_fiken)
+        page = client.get("/fiken/innstillinger")
+        assert "Ikke lagret ennå" in page.text
+        assert '<option value="3100" selected>' in page.text

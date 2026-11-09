@@ -5,11 +5,10 @@ from datetime import datetime
 
 import database
 from billing import InstallationUsage, draft_uuid
-from config import Settings
-from drafts import PlannedInstallation, plan_drafts, run_draft_job
+from drafts import InvoiceSettings, PlannedInstallation, plan_drafts, run_draft_job
 from zaptec_api import ChargeSession
 
-SETTINGS = Settings()
+SETTINGS = InvoiceSettings(income_account="3000", vat_type="HIGH", days_until_due=14)
 
 
 def planned(installation_id="inst-1", kwh=12.5):
@@ -116,11 +115,14 @@ def test_one_failure_does_not_stop_the_rest(fake_fiken):
     assert [d["customerId"] for d in fake_fiken.drafts] == [22]
 
 
-def test_product_line_when_configured(fake_fiken):
-    run(fake_fiken, [planned()], {"inst-1": 11}, settings=replace(SETTINGS, fiken_product_id=77))
-    line = fake_fiken.drafts[0]["lines"][0]
-    assert line["productId"] == 77
-    assert "vatType" not in line and "incomeAccount" not in line
+def test_invoice_settings_are_used(fake_fiken):
+    settings = InvoiceSettings(income_account="3600", vat_type="EXEMPT", days_until_due=30)
+    run(fake_fiken, [planned()], {"inst-1": 11}, settings=settings)
+    draft = fake_fiken.drafts[0]
+    assert draft["daysUntilDueDate"] == 30
+    assert draft["lines"][0]["incomeAccount"] == "3600"
+    assert draft["lines"][0]["vatType"] == "EXEMPT"
+    assert "productId" not in draft["lines"][0]
 
 
 def test_requests_carry_request_id(fake_fiken):

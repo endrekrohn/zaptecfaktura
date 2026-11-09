@@ -8,8 +8,10 @@ fra Fiken.
 
 1. Logg inn med Zaptec-kontoen.
 2. Første gang: trykk «Koble til Fiken», logg inn i Fiken og gi appen tilgang.
-   Har du flere foretak, velger du hvilket utkastene skal lages i. Tilkoblingen
-   huskes, så dette gjøres bare én gang.
+   Har du flere foretak, velger du hvilket utkastene skal lages i. Deretter
+   velger du inntektskonto, mva og forfall for utkastene. Tilkoblingen huskes,
+   så dette gjøres bare én gang. Innstillingene kan endres under
+   Fiken → Fakturainnstillinger.
 3. Oversikten viser forrige måned. Velg en annen måned øverst ved behov.
 4. Første gang, eller når en kunde endres: trykk «Velg kunde» og koble
    installasjonen til en kunde i Fiken.
@@ -81,9 +83,7 @@ Kopier `.env.example` til `.env` og fyll inn:
 | `SECRET_KEY` | Krypterer lagrede Fiken-token. Bytter du den, må alle koble til Fiken på nytt. |
 | `FIKEN_CLIENT_ID` / `FIKEN_CLIENT_SECRET` | Fra Fiken-appen. |
 | `FIKEN_REDIRECT_URI` | Må være registrert på appen, f.eks. `https://<domene>/fiken/callback`. |
-| `FIKEN_PRODUCT_ID` | Valgfritt. Fiken-produkt for fakturalinjen (gir mva-type og inntektskonto). |
-| `FIKEN_VAT_TYPE` / `FIKEN_INCOME_ACCOUNT` | Brukes når produkt ikke er satt. Standard `HIGH` / `3000`. |
-| `FIKEN_DAYS_UNTIL_DUE` | Forfall i dager. Standard 14. |
+| `FIKEN_VAT_TYPE` / `FIKEN_INCOME_ACCOUNT` / `FIKEN_DAYS_UNTIL_DUE` | Standardverdier til foretaket har lagret egne fakturainnstillinger. Standard `HIGH` / `3000` / 14. |
 | `DATABASE_PATH` | SQLite-fil. Standard `data/zaptecfaktura.db`, i Docker `/data/zaptecfaktura.db`. |
 
 Uten Fiken-variablene fungerer tjenesten som før: grunnlaget kan lastes ned som

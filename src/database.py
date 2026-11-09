@@ -58,6 +58,14 @@ CREATE TABLE IF NOT EXISTS invoice_draft (
     PRIMARY KEY (company_slug, installation_id, year, month)
 );
 
+CREATE TABLE IF NOT EXISTS invoice_settings (
+    company_slug TEXT PRIMARY KEY,
+    income_account TEXT NOT NULL,
+    vat_type TEXT NOT NULL,
+    days_until_due INTEGER NOT NULL,
+    updated_at REAL NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS usage_total (
     installation_id TEXT NOT NULL,
     year INTEGER NOT NULL,
@@ -333,4 +341,26 @@ def delete_usage_totals(year: int, month: int, installation_ids: list[str]) -> N
         conn.executemany(
             "DELETE FROM usage_total WHERE installation_id = ? AND year = ? AND month = ?",
             [(i, year, month) for i in installation_ids],
+        )
+
+
+# --- invoice settings -----------------------------------------------------
+
+
+def get_invoice_settings(company_slug: str) -> sqlite3.Row | None:
+    with get_db() as conn:
+        return conn.execute(
+            "SELECT income_account, vat_type, days_until_due FROM invoice_settings "
+            "WHERE company_slug = ?",
+            (company_slug,),
+        ).fetchone()
+
+
+def set_invoice_settings(
+    company_slug: str, income_account: str, vat_type: str, days_until_due: int
+) -> None:
+    with get_db() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO invoice_settings VALUES (?, ?, ?, ?, ?)",
+            (company_slug, income_account, vat_type, days_until_due, time.time()),
         )

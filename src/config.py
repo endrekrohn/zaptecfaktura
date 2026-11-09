@@ -41,10 +41,9 @@ class Settings:
     # Must match a redirect URI registered on the Fiken app, e.g.
     # https://faktura.example.no/fiken/callback
     fiken_redirect_uri: str = ""
+    # Defaults for invoice settings until they are set per company under
+    # /fiken/innstillinger.
     fiken_days_until_due: int = 14
-    # Either a Fiken product (carries VAT type and income account), or a free
-    # text line with the VAT type and income account below.
-    fiken_product_id: int | None = None
     fiken_vat_type: str = "HIGH"
     fiken_income_account: str = "3000"
 
@@ -60,7 +59,6 @@ class Settings:
 
 def load_settings() -> Settings:
     env = os.environ
-    product = env.get("FIKEN_PRODUCT_ID", "").strip()
     return Settings(
         zaptec_api_url=env.get("ZAPTEC_API_URL", Settings.zaptec_api_url),
         database_path=env.get("DATABASE_PATH", Settings.database_path),
@@ -79,7 +77,6 @@ def load_settings() -> Settings:
         fiken_days_until_due=int(
             env.get("FIKEN_DAYS_UNTIL_DUE", Settings.fiken_days_until_due)
         ),
-        fiken_product_id=int(product) if product else None,
         fiken_vat_type=env.get("FIKEN_VAT_TYPE", Settings.fiken_vat_type),
         fiken_income_account=env.get(
             "FIKEN_INCOME_ACCOUNT", Settings.fiken_income_account
