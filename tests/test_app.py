@@ -402,7 +402,9 @@ def test_link_to_draft_in_fiken(make_client, fake_fiken):
         assert fake_fiken.drafts[0]["uuid"] == draft_uuid("inst-a", 2026, 10)
         assert client.get("/drafts/status?year=2026&month=10").json()["drafts"]["inst-a"]["url"] == url
         page = client.get("/?year=2026&month=10")
-        assert f'href="{url}"' in page.text and 'rel="noopener"' in page.text
+        draft_id = fake_fiken.drafts[0]["draftId"]
+        assert f'href="{url}" target="_blank" rel="noopener" title="Åpne utkastet i Fiken">#{draft_id}</a>' in page.text
+        assert "Åpne utkastet i Fiken ↗" not in page.text
 
 
 def test_overview_does_not_fetch_sessions(make_client):
