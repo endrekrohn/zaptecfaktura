@@ -21,6 +21,7 @@
                 {% if user %}
                 <div class="row">
                     <span class="muted small user-email">{{ user }}</span>
+                    {% if fiken_configured() %}<a class="btn btn-ghost btn-sm" href="/fiken">Fiken</a>{% endif %}
                     <form method="post" action="/logout">
                         <button class="btn btn-ghost btn-sm" type="submit">Logg ut</button>
                     </form>

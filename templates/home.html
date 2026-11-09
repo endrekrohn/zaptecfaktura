@@ -29,8 +29,12 @@
         <div class="alert alert-err"><span class="dot"></span>{{ fiken_error }}</div>
         {% endif %}
         {% if not fiken_enabled %}
-        <div class="alert"><span class="dot" style="background: var(--amber)"></span>Fiken er ikke koblet til.
+        <div class="alert"><span class="dot" style="background: var(--amber)"></span>Fiken er ikke satt opp på serveren.
             Du kan laste ned grunnlaget, men ikke opprette utkast.</div>
+        {% elif not fiken_ready %}
+        <div class="alert spread"><span><span class="dot" style="background: var(--amber)"></span>Koble til Fiken for å
+                lage fakturautkast direkte i Fiken.</span>
+            <a class="btn btn-fill btn-sm" href="/fiken">Koble til Fiken</a></div>
         {% endif %}
         {% if pending %}
         <div class="alert"><span class="dot" style="background: var(--teal)"></span>Oppretter utkast i Fiken.
@@ -83,7 +87,7 @@
                     <button class="btn btn-ghost" type="submit" form="price-form" formaction="/exportall">
                         Last ned alt (zip)
                     </button>
-                    {% if fiken_enabled %}
+                    {% if fiken_ready %}
                     <button class="btn btn-coral" type="submit" form="price-form" formaction="/drafts"
                         id="create-drafts" data-ready="{{ ready }}" {% if ready == 0 or pending %}disabled{% endif %}>
                         Opprett {{ ready }} utkast i Fiken
@@ -96,8 +100,9 @@
         <div class="heading-wrapper">
             <h2>Installasjoner</h2>
             <div class="tally small">
+                {% if fiken_ready %}<span class="muted">Fiken: <a href="/fiken">{{ fiken_company }}</a></span>{% endif %}
                 <span class="status">{{ rows | length }} totalt</span>
-                {% if fiken_enabled %}
+                {% if fiken_ready %}
                 <span class="status s-ok"><span class="dot"></span>{{ ready }} klare</span>
                 {% if missing %}<span class="status s-warn"><span class="dot"></span>{{ missing }} mangler kunde</span>{% endif %}
                 {% endif %}
@@ -112,7 +117,7 @@
                             <th>Installasjon</th>
                             <th class="right">Forbruk</th>
                             <th class="right">Beløp ekskl. mva</th>
-                            {% if fiken_enabled %}
+                            {% if fiken_ready %}
                             <th>Kunde i Fiken</th>
                             <th>Utkast</th>
                             {% endif %}
@@ -129,7 +134,7 @@
                             </td>
                             <td class="right nowrap">{{ "%.3f" | format(u.total_kwh) | replace(".", ",") }} kWh</td>
                             <td class="right nowrap"><span class="amount" data-kwh="{{ u.total_kwh }}">–</span></td>
-                            {% if fiken_enabled %}
+                            {% if fiken_ready %}
                             <td>
                                 {% if row.customer %}
                                 <div>{{ row.customer.name }}</div>
@@ -165,7 +170,7 @@
                 </table>
             </div>
         </div>
-        {% if fiken_enabled %}
+        {% if fiken_ready %}
         <p class="muted small" style="margin: 0">
             Utkastene legges i Fiken med grunnlaget som vedlegg. Kontroller og send dem fra Fiken.
             Et utkast som allerede finnes for samme måned blir ikke overskrevet. Slett det i Fiken for å lage det på nytt.

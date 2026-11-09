@@ -6,7 +6,7 @@ from billing import InstallationUsage, draft_uuid
 from config import Settings
 from drafts import plan_drafts, run_draft_job
 
-SETTINGS = Settings(fiken_api_token="test-token", fiken_company_slug="test-as")
+SETTINGS = Settings()
 
 
 def usage(installation_id="inst-1", kwh=12.5):
@@ -19,9 +19,9 @@ def usage(installation_id="inst-1", kwh=12.5):
 
 
 def run(fake_fiken, usages, mappings, price_ore=150):
-    items = plan_drafts(usages, mappings, 2026, 10, price_ore)
-    asyncio.run(run_draft_job(fake_fiken.client(), SETTINGS, items, 2026, 10, price_ore))
-    return database.get_drafts(2026, 10)
+    items = plan_drafts("test-as", usages, mappings, 2026, 10, price_ore)
+    asyncio.run(run_draft_job(fake_fiken.client(), SETTINGS, "test-as", items, 2026, 10, price_ore))
+    return database.get_drafts("test-as", 2026, 10)
 
 
 def test_creates_draft_with_attachment(fake_fiken):
@@ -91,9 +91,9 @@ def test_one_failure_does_not_stop_the_rest(fake_fiken):
 def test_product_line_when_configured(fake_fiken):
     from dataclasses import replace
 
-    items = plan_drafts([usage()], {"inst-1": 11}, 2026, 10, 150)
+    items = plan_drafts("test-as", [usage()], {"inst-1": 11}, 2026, 10, 150)
     settings = replace(SETTINGS, fiken_product_id=77)
-    asyncio.run(run_draft_job(fake_fiken.client(), settings, items, 2026, 10, 150))
+    asyncio.run(run_draft_job(fake_fiken.client(), settings, "test-as", items, 2026, 10, 150))
     line = fake_fiken.drafts[0]["lines"][0]
     assert line["productId"] == 77
     assert "vatType" not in line and "incomeAccount" not in line
@@ -104,3 +104,18 @@ def test_requests_are_serialized_with_request_id(fake_fiken):
     assert all("X-Request-ID" in r.headers for r in fake_fiken.requests)
     create = next(r for r in fake_fiken.requests if r.method == "POST" and r.url.path.endswith("/drafts"))
     assert json.loads(create.content)["customerId"] == 11
+
+
+def test_lost_connection_fails_remaining_items(fake_fiken):
+    from fiken_api import FikenAPI
+    from fiken_oauth import FikenNotConnected
+
+    async def provider(force):
+        raise FikenNotConnected("revoked")
+
+    client = FikenAPI("https://api.fiken.no/api/v2", provider, "test-as", transport=fake_fiken.transport)
+    items = plan_drafts("test-as", [usage("a"), usage("b")], {"a": 11, "b": 22}, 2026, 10, 150)
+    asyncio.run(run_draft_job(client, SETTINGS, "test-as", items, 2026, 10, 150))
+    records = database.get_drafts("test-as", 2026, 10)
+    assert {r.status for r in records.values()} == {"failed"}
+    assert "Koble til Fiken" in records["b"].error

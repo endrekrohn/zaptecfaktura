@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Velg foretak · Zaptec-faktura{% endblock %}
+{% block content %}
+<div class="page" style="max-width: none">
+    <div class="container container-sm stack">
+        <p style="margin: 0"><a href="/fiken">‹ Tilbake</a></p>
+        <div class="stack" style="gap: 4px">
+            <h1>Velg foretak</h1>
+            <p class="muted" style="margin: 0">Hvilket foretak i Fiken skal fakturautkastene lages i?</p>
+        </div>
+        <div class="table-root">
+            <div class="table-scroll">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Foretak</th>
+                            <th>Org.nr.</th>
+                            <th class="col-actions"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for c in companies %}
+                        <tr>
+                            <td>
+                                <div style="font-weight: 600">{{ c.name }}</div>
+                                {% if c.testCompany %}<span class="tag">Testforetak</span>{% endif %}
+                            </td>
+                            <td class="nowrap">{{ c.organizationNumber or "–" }}</td>
+                            <td class="col-actions">
+                                {% if c.slug == connection.company_slug %}
+                                <span class="tag">Valgt</span>
+                                {% elif c.hasApiAccess == false %}
+                                <span class="status s-warn" title="Foretaket må ha API-modulen i Fiken"><span class="dot"></span>Mangler API-modul</span>
+                                {% else %}
+                                <form method="post" action="/fiken/company">
+                                    <input type="hidden" name="slug" value="{{ c.slug }}" />
+                                    <button class="btn btn-fill btn-sm" type="submit">Velg</button>
+                                </form>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td class="table-empty" colspan="3">Appen har ikke tilgang til noen foretak i Fiken.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <p class="muted small" style="margin: 0">Ser du ikke foretaket? Gi appen tilgang til det i Fiken, og koble til på nytt.</p>
+    </div>
+</div>
+{% endblock %}

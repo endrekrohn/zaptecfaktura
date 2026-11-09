@@ -6,13 +6,16 @@ fra Fiken.
 
 ## Slik brukes den
 
-1. Logg inn med Zaptec-kontoen (bare brukere i `ALLOWED_USERS`).
-2. Oversikten viser forrige måned. Velg en annen måned øverst ved behov.
-3. Første gang, eller når en kunde endres: trykk «Velg kunde» og koble
+1. Logg inn med Zaptec-kontoen.
+2. Første gang: trykk «Koble til Fiken», logg inn i Fiken og gi appen tilgang.
+   Har du flere foretak, velger du hvilket utkastene skal lages i. Tilkoblingen
+   huskes, så dette gjøres bare én gang.
+3. Oversikten viser forrige måned. Velg en annen måned øverst ved behov.
+4. Første gang, eller når en kunde endres: trykk «Velg kunde» og koble
    installasjonen til en kunde i Fiken.
-4. Fyll inn strømregningen (sum og kWh) og påslag, eller skriv pris per kWh
+5. Fyll inn strømregningen (sum og kWh) og påslag, eller skriv pris per kWh
    direkte.
-5. Trykk «Opprett utkast i Fiken». Utkastene lages i bakgrunnen med
+6. Trykk «Opprett utkast i Fiken». Utkastene lages i bakgrunnen med
    PDF-grunnlaget som vedlegg, og statusen vises i tabellen.
 
 Hvert utkast får en fast UUID per installasjon og måned. Å trykke på nytt lager
@@ -23,8 +26,27 @@ nytt med ny pris.
 ## Personvern
 
 Tjenesten lagrer ikke kundenavn eller andre kundeopplysninger, bare Fikens
-kunde-id per Zaptec-installasjon. Navn hentes fra Fiken når siden vises.
-Sesjoner lagrer Zaptec-tokenet og brukerens e-post til sesjonen utløper.
+kunde-id per foretak og Zaptec-installasjon. Navn hentes fra Fiken når siden
+vises. Sesjoner lagrer Zaptec-tokenet og brukerens e-post til sesjonen utløper.
+
+Fiken-tilgangen er OAuth per bruker. Access- og refresh-token lagres kryptert
+med `SECRET_KEY`. «Koble fra Fiken» trekker tilbake tilgangen hos Fiken og
+sletter tokenene. Brukeren kan også fjerne appen i Fiken under Rediger konto →
+Sikkerhet → Apper du har gitt tilgang til.
+
+## Fiken-appen
+
+Opprett appen i Fiken under Rediger konto → API → Ny app:
+
+- **Hvem skal bruke appen:** «Meg selv/mine foretak».
+- **Redirect URIs:** `https://<domene>/fiken/callback`, og
+  `http://localhost:8000/fiken/callback` for lokal utvikling.
+- **Godkjente brukere:** Fiken-brukerne som skal kunne koble til.
+- **Kun lesetilgang:** av (appen lager utkast).
+- **Uten client secret (PKCE):** av. Appen kjører på en server og bruker
+  client secret, og sender PKCE i tillegg.
+
+Foretaket må ha API-modulen i Fiken.
 
 ## Oppsett
 
@@ -32,9 +54,10 @@ Kopier `.env.example` til `.env` og fyll inn:
 
 | Variabel | Beskrivelse |
 |---|---|
-| `ALLOWED_USERS` | Zaptec-e-poster som får logge inn, kommaseparert. Påkrevd når Fiken er satt opp. |
-| `FIKEN_API_TOKEN` | Personlig API-nøkkel (Rediger konto → API). Krever API-modulen i Fiken. |
-| `FIKEN_COMPANY_SLUG` | Foretakets slug fra Fiken-URL-en. |
+| `ALLOWED_USERS` | Valgfritt. Zaptec-e-poster som får logge inn, kommaseparert. |
+| `SECRET_KEY` | Krypterer lagrede Fiken-token. Bytter du den, må alle koble til Fiken på nytt. |
+| `FIKEN_CLIENT_ID` / `FIKEN_CLIENT_SECRET` | Fra Fiken-appen. |
+| `FIKEN_REDIRECT_URI` | Må være registrert på appen, f.eks. `https://<domene>/fiken/callback`. |
 | `FIKEN_PRODUCT_ID` | Valgfritt. Fiken-produkt for fakturalinjen (gir mva-type og inntektskonto). |
 | `FIKEN_VAT_TYPE` / `FIKEN_INCOME_ACCOUNT` | Brukes når produkt ikke er satt. Standard `HIGH` / `3000`. |
 | `FIKEN_DAYS_UNTIL_DUE` | Forfall i dager. Standard 14. |

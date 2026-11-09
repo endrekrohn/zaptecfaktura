@@ -1,8 +1,9 @@
 """SQLite storage.
 
-Holds login sessions, the installation -> Fiken customer mapping and the
-status of invoice drafts per installation and month. No customer names or
-other customer details are stored: only Fiken's contact id.
+Holds login sessions, each user's Fiken connection (OAuth tokens, encrypted),
+the installation -> Fiken customer mapping and the status of invoice drafts.
+Mappings and drafts belong to a Fiken company. No customer names or other
+customer details are stored: only Fiken's contact id.
 """
 
 import hashlib
@@ -23,13 +24,26 @@ CREATE TABLE IF NOT EXISTS sessions (
     expires_at REAL NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS customer_mapping (
-    installation_id TEXT PRIMARY KEY,
-    fiken_contact_id INTEGER NOT NULL,
+CREATE TABLE IF NOT EXISTS fiken_connection (
+    zaptec_user TEXT PRIMARY KEY,
+    access_token TEXT NOT NULL,   -- encrypted
+    refresh_token TEXT NOT NULL,  -- encrypted
+    expires_at REAL NOT NULL,
+    company_slug TEXT,
+    company_name TEXT,
     updated_at REAL NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS customer_mapping (
+    company_slug TEXT NOT NULL,
+    installation_id TEXT NOT NULL,
+    fiken_contact_id INTEGER NOT NULL,
+    updated_at REAL NOT NULL,
+    PRIMARY KEY (company_slug, installation_id)
+);
+
 CREATE TABLE IF NOT EXISTS invoice_draft (
+    company_slug TEXT NOT NULL,
     installation_id TEXT NOT NULL,
     year INTEGER NOT NULL,
     month INTEGER NOT NULL,
@@ -41,7 +55,7 @@ CREATE TABLE IF NOT EXISTS invoice_draft (
     fiken_draft_id INTEGER,
     error TEXT,
     updated_at REAL NOT NULL,
-    PRIMARY KEY (installation_id, year, month)
+    PRIMARY KEY (company_slug, installation_id, year, month)
 );
 """
 
@@ -57,6 +71,12 @@ def init_db(path: str) -> None:
         columns = {row[1] for row in conn.execute("PRAGMA table_info(sessions)")}
         if columns and "expires_at" not in columns:
             conn.execute("DROP TABLE sessions")
+        # The personal-token version had no company column. It was never
+        # released, so its rows are dropped rather than migrated.
+        for table in ("customer_mapping", "invoice_draft"):
+            columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+            if columns and "company_slug" not in columns:
+                conn.execute(f"DROP TABLE {table}")
         conn.executescript(SCHEMA)
 
 
@@ -116,30 +136,96 @@ def delete_expired_sessions() -> None:
         conn.execute("DELETE FROM sessions WHERE expires_at < ?", (time.time(),))
 
 
+# --- Fiken connection ----------------------------------------------------
+
+
+@dataclass
+class FikenConnection:
+    zaptec_user: str
+    access_token: str  # encrypted
+    refresh_token: str  # encrypted
+    expires_at: float
+    company_slug: str | None
+    company_name: str | None
+
+
+def get_fiken_connection(zaptec_user: str) -> FikenConnection | None:
+    with get_db() as conn:
+        row = conn.execute(
+            """
+            SELECT zaptec_user, access_token, refresh_token, expires_at,
+                   company_slug, company_name
+            FROM fiken_connection WHERE zaptec_user = ?
+            """,
+            (zaptec_user.lower(),),
+        ).fetchone()
+    return FikenConnection(**dict(row)) if row else None
+
+
+def save_fiken_tokens(
+    zaptec_user: str, access_token: str, refresh_token: str, expires_at: float
+) -> None:
+    """Store new tokens, keeping the chosen company if there is one."""
+    with get_db() as conn:
+        conn.execute(
+            """
+            INSERT INTO fiken_connection
+                (zaptec_user, access_token, refresh_token, expires_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT (zaptec_user) DO UPDATE SET
+                access_token = excluded.access_token,
+                refresh_token = excluded.refresh_token,
+                expires_at = excluded.expires_at,
+                updated_at = excluded.updated_at
+            """,
+            (zaptec_user.lower(), access_token, refresh_token, expires_at, time.time()),
+        )
+
+
+def set_fiken_company(zaptec_user: str, slug: str, name: str) -> None:
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE fiken_connection SET company_slug = ?, company_name = ?, "
+            "updated_at = ? WHERE zaptec_user = ?",
+            (slug, name, time.time(), zaptec_user.lower()),
+        )
+
+
+def delete_fiken_connection(zaptec_user: str) -> None:
+    with get_db() as conn:
+        conn.execute(
+            "DELETE FROM fiken_connection WHERE zaptec_user = ?", (zaptec_user.lower(),)
+        )
+
+
 # --- customer mapping -----------------------------------------------------
 
 
-def get_customer_mappings() -> dict[str, int]:
+def get_customer_mappings(company_slug: str) -> dict[str, int]:
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT installation_id, fiken_contact_id FROM customer_mapping"
+            "SELECT installation_id, fiken_contact_id FROM customer_mapping "
+            "WHERE company_slug = ?",
+            (company_slug,),
         ).fetchall()
     return {r["installation_id"]: r["fiken_contact_id"] for r in rows}
 
 
-def set_customer_mapping(installation_id: str, fiken_contact_id: int) -> None:
+def set_customer_mapping(
+    company_slug: str, installation_id: str, fiken_contact_id: int
+) -> None:
     with get_db() as conn:
         conn.execute(
-            "INSERT OR REPLACE INTO customer_mapping VALUES (?, ?, ?)",
-            (installation_id, fiken_contact_id, time.time()),
+            "INSERT OR REPLACE INTO customer_mapping VALUES (?, ?, ?, ?)",
+            (company_slug, installation_id, fiken_contact_id, time.time()),
         )
 
 
-def delete_customer_mapping(installation_id: str) -> None:
+def delete_customer_mapping(company_slug: str, installation_id: str) -> None:
     with get_db() as conn:
         conn.execute(
-            "DELETE FROM customer_mapping WHERE installation_id = ?",
-            (installation_id,),
+            "DELETE FROM customer_mapping WHERE company_slug = ? AND installation_id = ?",
+            (company_slug, installation_id),
         )
 
 
@@ -148,6 +234,7 @@ def delete_customer_mapping(installation_id: str) -> None:
 
 @dataclass
 class DraftRecord:
+    company_slug: str
     installation_id: str
     year: int
     month: int
@@ -165,9 +252,10 @@ def upsert_draft(record: DraftRecord) -> None:
         conn.execute(
             """
             INSERT OR REPLACE INTO invoice_draft
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
+                record.company_slug,
                 record.installation_id,
                 record.year,
                 record.month,
@@ -183,15 +271,15 @@ def upsert_draft(record: DraftRecord) -> None:
         )
 
 
-def get_drafts(year: int, month: int) -> dict[str, DraftRecord]:
+def get_drafts(company_slug: str, year: int, month: int) -> dict[str, DraftRecord]:
     with get_db() as conn:
         rows = conn.execute(
             """
-            SELECT installation_id, year, month, draft_uuid, fiken_contact_id, kwh,
-                   unit_price_ore, status, fiken_draft_id, error
-            FROM invoice_draft WHERE year = ? AND month = ?
+            SELECT company_slug, installation_id, year, month, draft_uuid,
+                   fiken_contact_id, kwh, unit_price_ore, status, fiken_draft_id, error
+            FROM invoice_draft WHERE company_slug = ? AND year = ? AND month = ?
             """,
-            (year, month),
+            (company_slug, year, month),
         ).fetchall()
     return {r["installation_id"]: DraftRecord(**dict(r)) for r in rows}
 

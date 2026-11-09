@@ -27,20 +27,55 @@ from billing import (
 from config import BASE_DIR, settings
 from drafts import STATUSES, plan_drafts, run_draft_job
 from fiken_api import FikenAPI, FikenError
+from fiken_oauth import (
+    FikenNotConnected,
+    FikenOAuth,
+    FikenOAuthError,
+    FikenTokens,
+    new_pkce_pair,
+)
 from invoice import format_month_to_norwegian, format_norwegian_accounting, generate_invoice_pdf
 from zaptec_api import ZaptecAPI, ZaptecAuthError, ZaptecError
 
 log = logging.getLogger(__name__)
 
 SESSION_COOKIE = "session_id"
+OAUTH_COOKIE = "fiken_oauth"
 PUBLIC_PATHS = ("/static", "/login", "/health")
 
 zaptec_api = ZaptecAPI(settings.zaptec_api_url)
-fiken_api = (
-    FikenAPI(settings.fiken_api_url, settings.fiken_api_token, settings.fiken_company_slug)
-    if settings.fiken_enabled
-    else None
-)
+
+# Tests inject an httpx.MockTransport here (and reset _fiken_tokens).
+fiken_transport = None
+_fiken_tokens: FikenTokens | None = None
+
+
+def get_fiken_tokens() -> FikenTokens | None:
+    global _fiken_tokens
+    if not settings.fiken_enabled:
+        return None
+    if _fiken_tokens is None:
+        oauth = FikenOAuth(
+            settings.fiken_oauth_url,
+            settings.fiken_client_id,
+            settings.fiken_client_secret,
+            settings.fiken_redirect_uri,
+            transport=fiken_transport,
+        )
+        _fiken_tokens = FikenTokens(oauth, settings.secret_key)
+    return _fiken_tokens
+
+
+def fiken_client(user: str, company_slug: str | None = None) -> FikenAPI:
+    tokens = get_fiken_tokens()
+    if tokens is None:
+        raise PageError("Fiken er ikke konfigurert.", 503)
+    return FikenAPI(
+        settings.fiken_api_url,
+        lambda force: tokens.access_token(user, force),
+        company_slug,
+        transport=fiken_transport,
+    )
 
 
 @asynccontextmanager
@@ -48,9 +83,10 @@ async def lifespan(app: FastAPI):
     database.init_db(settings.database_path)
     database.delete_expired_sessions()
     database.fail_unfinished_drafts()
-    if settings.fiken_enabled and not settings.allowed_users:
+    if settings.fiken_client_id and not settings.fiken_enabled:
         log.warning(
-            "Fiken is configured but ALLOWED_USERS is empty: all logins are refused."
+            "FIKEN_CLIENT_ID is set, but FIKEN_CLIENT_SECRET, FIKEN_REDIRECT_URI "
+            "or SECRET_KEY is missing: Fiken is disabled."
         )
     yield
 
@@ -60,6 +96,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.filters["nok"] = lambda ore: format_norwegian_accounting(ore / 100)
 templates.env.filters["month_name"] = lambda m: (format_month_to_norwegian(m) or "").capitalize()
+templates.env.globals["fiken_configured"] = lambda: settings.fiken_enabled
 
 
 class PageError(Exception):
@@ -101,6 +138,20 @@ async def zaptec_error_handler(request: Request, exc: ZaptecError):
     )
 
 
+class FikenSetupRequired(Exception):
+    """Fiken is configured, but this user hasn't connected or chosen a company."""
+
+
+@app.exception_handler(FikenSetupRequired)
+async def fiken_setup_handler(request: Request, exc: FikenSetupRequired):
+    return RedirectResponse(url="/fiken", status_code=303)
+
+
+@app.exception_handler(FikenNotConnected)
+async def fiken_not_connected_handler(request: Request, exc: FikenNotConnected):
+    return RedirectResponse(url="/fiken?error=expired", status_code=303)
+
+
 def _redirect_to_login() -> RedirectResponse:
     response = RedirectResponse(url="/login", status_code=303)
     response.delete_cookie(SESSION_COOKIE)
@@ -125,6 +176,20 @@ async def auth_middleware(request: Request, call_next):
 
 def get_token(request: Request) -> str:
     return request.state.session["access_token"]
+
+
+def get_user(request: Request) -> str:
+    return request.state.session["user"]
+
+
+def require_company(user: str) -> tuple[FikenAPI, str]:
+    """Return a Fiken client for the user's chosen company, or send them to /fiken."""
+    if not settings.fiken_enabled:
+        raise PageError("Fiken er ikke konfigurert.", 503)
+    connection = database.get_fiken_connection(user)
+    if connection is None or not connection.company_slug:
+        raise FikenSetupRequired()
+    return fiken_client(user, connection.company_slug), connection.company_slug
 
 
 def overview_url(year: int, month: int, nok_per_kwh: str | None = None) -> str:
@@ -159,15 +224,8 @@ def _login_error(request: Request, message: str, username: str) -> HTMLResponse:
 @app.post("/login", response_class=HTMLResponse)
 async def login(request: Request, username: str = Form(...), password: str = Form(...)):
     username = username.strip()
-    if settings.allowed_users:
-        if username.lower() not in settings.allowed_users:
-            return _login_error(request, "Brukeren har ikke tilgang til tjenesten.", username)
-    elif settings.fiken_enabled:
-        return _login_error(
-            request,
-            "Tilgang er ikke konfigurert. Sett ALLOWED_USERS før innlogging.",
-            username,
-        )
+    if settings.allowed_users and username.lower() not in settings.allowed_users:
+        return _login_error(request, "Brukeren har ikke tilgang til tjenesten.", username)
 
     try:
         token_data = await zaptec_api.login(username, password)
@@ -247,10 +305,8 @@ def usage_pdf(usage: InstallationUsage, year: int, month: int, unit_price_ore: i
     )
 
 
-async def load_customers() -> dict[int, dict]:
-    if fiken_api is None:
-        return {}
-    customers = await fiken_api.list_customers()
+async def load_customers(fiken: FikenAPI) -> dict[int, dict]:
+    customers = await fiken.list_customers()
     return {c["contactId"]: c for c in customers}
 
 
@@ -264,22 +320,30 @@ async def overview(
     month: int | None = Query(None),
     nok_per_kwh: str | None = Query(None),
     token: str = Depends(get_token),
+    user: str = Depends(get_user),
 ):
     if year is None or month is None:
         year, month = previous_month(date.today())
     validate_period(year, month)
 
     usages = await load_all_usage(token, year, month)
-    mappings = database.get_customer_mappings()
-    drafts = database.get_drafts(year, month)
 
+    connection = database.get_fiken_connection(user) if settings.fiken_enabled else None
+    company_slug = connection.company_slug if connection else None
+    mappings: dict[str, int] = {}
+    drafts: dict[str, database.DraftRecord] = {}
     customers: dict[int, dict] = {}
     fiken_error = None
-    try:
-        customers = await load_customers()
-    except FikenError:
-        log.exception("Could not load Fiken customers")
-        fiken_error = "Kunne ikke hente kunder fra Fiken."
+    if company_slug:
+        mappings = database.get_customer_mappings(company_slug)
+        drafts = database.get_drafts(company_slug, year, month)
+        try:
+            customers = await load_customers(fiken_client(user, company_slug))
+        except FikenNotConnected:
+            connection = company_slug = None
+        except FikenError:
+            log.exception("Could not load Fiken customers")
+            fiken_error = "Kunne ikke hente kunder fra Fiken."
 
     rows = []
     for usage in usages:
@@ -304,7 +368,7 @@ async def overview(
         request,
         "home.html",
         {
-            "user": request.state.session["user"],
+            "user": user,
             "year": year,
             "month": month,
             "nok_per_kwh": nok_per_kwh or "",
@@ -313,6 +377,9 @@ async def overview(
             "missing": missing,
             "pending": pending,
             "fiken_enabled": settings.fiken_enabled,
+            # Connected with a company chosen: drafts can be created.
+            "fiken_ready": bool(company_slug),
+            "fiken_company": connection.company_name if company_slug else None,
             "fiken_error": fiken_error,
             "years": range(date.today().year, 2019, -1),
         },
@@ -403,12 +470,6 @@ async def export_all_usage(
 # --- Fiken drafts ---------------------------------------------------------
 
 
-def require_fiken() -> FikenAPI:
-    if fiken_api is None:
-        raise PageError("Fiken er ikke konfigurert (FIKEN_API_TOKEN og FIKEN_COMPANY_SLUG).", 503)
-    return fiken_api
-
-
 @app.post("/drafts")
 async def create_drafts(
     background_tasks: BackgroundTasks,
@@ -416,8 +477,9 @@ async def create_drafts(
     month: int = Form(...),
     nok_per_kwh: str = Form(...),
     token: str = Depends(get_token),
+    user: str = Depends(get_user),
 ):
-    fiken = require_fiken()
+    fiken, company_slug = require_company(user)
     validate_period(year, month)
     price = parse_nok_per_kwh(nok_per_kwh)
     if price <= 0:
@@ -426,7 +488,7 @@ async def create_drafts(
 
     usages = await load_all_usage(token, year, month)
     try:
-        customers = await load_customers()
+        customers = await load_customers(fiken)
     except FikenError:
         log.exception("Could not load Fiken customers")
         raise PageError("Kunne ikke hente kunder fra Fiken. Prøv igjen senere.", 502)
@@ -434,13 +496,13 @@ async def create_drafts(
     # counts as missing, so no draft is made for the wrong contact.
     mappings = {
         installation_id: contact_id
-        for installation_id, contact_id in database.get_customer_mappings().items()
+        for installation_id, contact_id in database.get_customer_mappings(company_slug).items()
         if contact_id in customers
     }
-    items = plan_drafts(usages, mappings, year, month, unit_price_ore)
+    items = plan_drafts(company_slug, usages, mappings, year, month, unit_price_ore)
     if items:
         background_tasks.add_task(
-            run_draft_job, fiken, settings, items, year, month, unit_price_ore
+            run_draft_job, fiken, settings, company_slug, items, year, month, unit_price_ore
         )
     return RedirectResponse(overview_url(year, month, nok_per_kwh), status_code=303)
 
@@ -472,12 +534,13 @@ async def customer_picker(
     nok_per_kwh: str | None = Query(None),
     q: str = Query(""),
     token: str = Depends(get_token),
+    user: str = Depends(get_user),
 ):
-    fiken = require_fiken()
+    fiken, company_slug = require_company(user)
     validate_period(year, month)
     installation = await find_installation(token, installation_id)
     customers = await fiken.list_customers()
-    current_id = database.get_customer_mappings().get(installation_id)
+    current_id = database.get_customer_mappings(company_slug).get(installation_id)
     current = next((c for c in customers if c["contactId"] == current_id), None)
     matches = [c for c in customers if not c.get("inactive") and _matches(c, q.strip())]
     matches.sort(key=lambda c: (c.get("name") or "").lower())
@@ -486,7 +549,7 @@ async def customer_picker(
         request,
         "customer.html",
         {
-            "user": request.state.session["user"],
+            "user": user,
             "installation": installation,
             "current_id": current_id,
             "current": current,
@@ -508,14 +571,15 @@ async def set_customer(
     month: int = Form(...),
     nok_per_kwh: str = Form(""),
     token: str = Depends(get_token),
+    user: str = Depends(get_user),
 ):
-    fiken = require_fiken()
+    fiken, company_slug = require_company(user)
     validate_period(year, month)
     await find_installation(token, installation_id)
     customers = await fiken.list_customers()
     if not any(c["contactId"] == contact_id for c in customers):
         raise PageError("Fant ikke kunden i Fiken.", 404)
-    database.set_customer_mapping(installation_id, contact_id)
+    database.set_customer_mapping(company_slug, installation_id, contact_id)
     return RedirectResponse(overview_url(year, month, nok_per_kwh), status_code=303)
 
 
@@ -526,8 +590,139 @@ async def delete_customer(
     month: int = Form(...),
     nok_per_kwh: str = Form(""),
     token: str = Depends(get_token),
+    user: str = Depends(get_user),
 ):
+    _, company_slug = require_company(user)
     validate_period(year, month)
     await find_installation(token, installation_id)
-    database.delete_customer_mapping(installation_id)
+    database.delete_customer_mapping(company_slug, installation_id)
     return RedirectResponse(overview_url(year, month, nok_per_kwh), status_code=303)
+
+
+# --- Fiken connection (OAuth) --------------------------------------------
+
+FIKEN_PAGE_ERRORS = {
+    "denied": "Du avbrøt tilkoblingen i Fiken. Ingenting ble endret.",
+    "expired": "Tilkoblingen til Fiken er utløpt eller trukket tilbake. Koble til på nytt.",
+    "state": "Tilkoblingen kunne ikke bekreftes. Prøv igjen.",
+    "no_company": "Fiken-brukeren har ikke gitt appen tilgang til noen foretak.",
+    "failed": "Fiken avviste tilkoblingen. Prøv igjen.",
+}
+
+
+def _require_fiken_enabled() -> FikenTokens:
+    tokens = get_fiken_tokens()
+    if tokens is None:
+        raise PageError("Fiken er ikke konfigurert på serveren.", 503)
+    return tokens
+
+
+@app.get("/fiken", response_class=HTMLResponse)
+async def fiken_settings(
+    request: Request, error: str | None = Query(None), user: str = Depends(get_user)
+):
+    _require_fiken_enabled()
+    connection = database.get_fiken_connection(user)
+    return templates.TemplateResponse(
+        request,
+        "fiken.html",
+        {
+            "user": user,
+            "connection": connection,
+            "error": FIKEN_PAGE_ERRORS.get(error or ""),
+        },
+    )
+
+
+@app.post("/fiken/connect")
+async def fiken_connect(user: str = Depends(get_user)):
+    tokens = _require_fiken_enabled()
+    state = secrets.token_urlsafe(32)
+    verifier, challenge = new_pkce_pair()
+    response = RedirectResponse(tokens.oauth.authorize_url(state, challenge), status_code=303)
+    # SameSite=Lax is sent on the top-level redirect back from fiken.no.
+    response.set_cookie(
+        OAUTH_COOKIE,
+        f"{state}.{verifier}",
+        max_age=600,
+        path="/fiken",
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="lax",
+    )
+    return response
+
+
+def _fiken_redirect(error: str | None = None, to: str = "/fiken") -> RedirectResponse:
+    response = RedirectResponse(f"{to}?error={error}" if error else to, status_code=303)
+    response.delete_cookie(OAUTH_COOKIE, path="/fiken")
+    return response
+
+
+@app.get("/fiken/callback")
+async def fiken_callback(
+    request: Request,
+    code: str | None = Query(None),
+    state: str | None = Query(None),
+    error: str | None = Query(None),
+    user: str = Depends(get_user),
+):
+    tokens = _require_fiken_enabled()
+    if error:
+        return _fiken_redirect("denied" if error == "access_denied" else "failed")
+
+    expected_state, _, verifier = (request.cookies.get(OAUTH_COOKIE) or "").partition(".")
+    if not (code and state and expected_state and verifier) or not secrets.compare_digest(
+        state, expected_state
+    ):
+        return _fiken_redirect("state")
+
+    try:
+        token_set = await tokens.oauth.exchange_code(code, verifier, state)
+    except FikenOAuthError:
+        log.exception("Fiken code exchange failed")
+        return _fiken_redirect("failed")
+    tokens.save(user, token_set)
+
+    companies = await fiken_client(user).list_companies()
+    if not companies:
+        return _fiken_redirect("no_company")
+    if len(companies) == 1 and companies[0].get("hasApiAccess", True):
+        database.set_fiken_company(user, companies[0]["slug"], companies[0]["name"])
+        return _fiken_redirect(to="/")
+    return _fiken_redirect(to="/fiken/company")
+
+
+@app.get("/fiken/company", response_class=HTMLResponse)
+async def fiken_company_picker(request: Request, user: str = Depends(get_user)):
+    _require_fiken_enabled()
+    connection = database.get_fiken_connection(user)
+    if connection is None:
+        return RedirectResponse("/fiken", status_code=303)
+    companies = await fiken_client(user).list_companies()
+    companies.sort(key=lambda c: (c.get("name") or "").lower())
+    return templates.TemplateResponse(
+        request,
+        "fiken_company.html",
+        {"user": user, "connection": connection, "companies": companies},
+    )
+
+
+@app.post("/fiken/company")
+async def fiken_select_company(slug: str = Form(...), user: str = Depends(get_user)):
+    _require_fiken_enabled()
+    if database.get_fiken_connection(user) is None:
+        return RedirectResponse("/fiken", status_code=303)
+    companies = await fiken_client(user).list_companies()
+    company = next((c for c in companies if c["slug"] == slug), None)
+    if company is None:
+        raise PageError("Fant ikke foretaket i Fiken.", 404)
+    database.set_fiken_company(user, company["slug"], company["name"])
+    return RedirectResponse("/", status_code=303)
+
+
+@app.post("/fiken/disconnect")
+async def fiken_disconnect(user: str = Depends(get_user)):
+    tokens = _require_fiken_enabled()
+    await tokens.disconnect(user)
+    return RedirectResponse("/fiken", status_code=303)

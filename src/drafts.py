@@ -10,6 +10,7 @@ import database
 from billing import InstallationUsage, draft_uuid, pdf_filename
 from config import Settings
 from fiken_api import FikenAPI
+from fiken_oauth import FikenNotConnected
 from invoice import format_month_to_norwegian, generate_invoice_pdf
 
 log = logging.getLogger(__name__)
@@ -38,6 +39,7 @@ class DraftJobItem:
 
 
 def plan_drafts(
+    company_slug: str,
     usages: list[InstallationUsage],
     mappings: dict[str, int],
     year: int,
@@ -58,6 +60,7 @@ def plan_drafts(
             items.append(DraftJobItem(usage, contact_id, uid))
         database.upsert_draft(
             database.DraftRecord(
+                company_slug=company_slug,
                 installation_id=usage.installation_id,
                 year=year,
                 month=month,
@@ -151,14 +154,18 @@ async def _create_one(
 async def run_draft_job(
     fiken: FikenAPI,
     settings: Settings,
+    company_slug: str,
     items: list[DraftJobItem],
     year: int,
     month: int,
     unit_price_ore: int,
 ) -> None:
+    not_connected = "Fiken-tilkoblingen er borte. Koble til Fiken på nytt og prøv igjen."
+    lost_connection = False
     async with _job_lock:
         for item in items:
             record = database.DraftRecord(
+                company_slug=company_slug,
                 installation_id=item.usage.installation_id,
                 year=year,
                 month=month,
@@ -168,12 +175,20 @@ async def run_draft_job(
                 unit_price_ore=unit_price_ore,
                 status="pending",
             )
+            if lost_connection:
+                record.status, record.error = "failed", not_connected
+                database.upsert_draft(record)
+                continue
             try:
                 status, draft_id = await _create_one(
                     fiken, settings, item, year, month, unit_price_ore
                 )
                 record.status = status
                 record.fiken_draft_id = draft_id
+            except FikenNotConnected:
+                # Consent revoked mid-run: the rest would fail the same way.
+                lost_connection = True
+                record.status, record.error = "failed", not_connected
             except Exception as e:  # keep going with the next installation
                 log.exception(
                     "Draft for installation %s failed", item.usage.installation_id
