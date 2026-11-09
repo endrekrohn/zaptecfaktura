@@ -1,35 +1,33 @@
 <!doctype html>
-<html>
+<html lang="no">
     <head>
-        <title>Zaptec Export</title>
-        <style>
-            body {
-                font-family: Arial, sans-serif;
-                margin: 20px;
-            }
-            .error {
-                color: red;
-            }
-            form {
-                margin-bottom: 20px;
-            }
-            table {
-                border-collapse: collapse;
-                width: 100%;
-                margin-top: 20px;
-            }
-            th,
-            td {
-                border: 1px solid #ddd;
-                padding: 8px;
-                text-align: left;
-            }
-            th {
-                background-color: #f2f2f2;
-            }
-        </style>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>{% block title %}Zaptec-faktura{% endblock %}</title>
+        <link rel="icon" href="/static/favicon.svg" />
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link
+            href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700;800&family=Inter:wght@400;500;600&display=swap"
+            rel="stylesheet"
+        />
+        <link rel="stylesheet" href="/static/app.css" />
+        {% block head %}{% endblock %}
     </head>
     <body>
+        <header class="topbar">
+            <div class="inner">
+                <a class="wordmark" href="/">zaptecfaktura</a>
+                {% if user %}
+                <div class="row">
+                    <span class="muted small user-email">{{ user }}</span>
+                    <form method="post" action="/logout">
+                        <button class="btn btn-ghost btn-sm" type="submit">Logg ut</button>
+                    </form>
+                </div>
+                {% endif %}
+            </div>
+        </header>
         {% block content %}{% endblock %}
     </body>
 </html>

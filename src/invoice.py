@@ -1,5 +1,7 @@
 import io
 from datetime import datetime
+from decimal import ROUND_HALF_UP, Decimal
+from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -55,7 +57,7 @@ def generate_invoice_pdf(
     elements = []
 
     title = Paragraph(
-        f"Fakturagrunnlag elbillader {installation_name or installation_id}",
+        f"Fakturagrunnlag elbillader {escape(installation_name or installation_id)}",
         title_style,
     )
     elements.append(title)
@@ -218,45 +220,20 @@ def generate_invoice_pdf(
 
 def format_norwegian_accounting(number):
     """
-    Format a number according to Norwegian accounting conventions.
-
-    Args:
-        number (float or int): The number to format
-
-    Returns:
-        str: Formatted string in Norwegian accounting style
+    Format a number according to Norwegian accounting conventions,
+    e.g. 1234567.891 -> "1 234 567,89".
     """
-    number = float(number)
-
-    integer_part = int(number)
-    decimal_part = round((number - integer_part) * 100)
-
-    is_negative = integer_part < 0
-    if is_negative:
-        integer_part = abs(integer_part)
-
-    int_str = str(integer_part)
-
-    formatted_int = ""
-    for i, digit in enumerate(reversed(int_str)):
-        if i > 0 and i % 3 == 0:
-            formatted_int = " " + formatted_int
-        formatted_int = digit + formatted_int
-
-    if decimal_part < 10:
-        decimal_str = f"0{decimal_part}"
-    else:
-        decimal_str = str(decimal_part)
-
-    result = f"{formatted_int},{decimal_str}"
-
-    if is_negative:
-        result = f"-{result}"
-
-    return result
+    amount = Decimal(str(number)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    sign = "-" if amount < 0 else ""
+    integer_part, decimal_part = f"{abs(amount):.2f}".split(".")
+    groups = []
+    while integer_part:
+        groups.insert(0, integer_part[-3:])
+        integer_part = integer_part[:-3]
+    return f"{sign}{' '.join(groups)},{decimal_part}"
 
 
-def format_month_to_norwegian(month_int: int) -> int | None:
+def format_month_to_norwegian(month_int: int) -> str | None:
     months = [
         "januar",
         "februar",

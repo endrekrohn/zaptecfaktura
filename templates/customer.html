@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Velg kunde · Zaptec-faktura{% endblock %}
+{% block content %}
+<div class="page" style="max-width: none">
+    <div class="container container-md stack">
+        <p style="margin: 0"><a href="{{ back_url }}">‹ Tilbake til oversikten</a></p>
+        <div class="stack" style="gap: 4px">
+            <h1>Velg kunde</h1>
+            <p class="muted" style="margin: 0">Hvem skal faktureres for <strong>{{ installation.Name or installation.Id }}</strong>?</p>
+        </div>
+
+        {% if current_id %}
+        <section class="card">
+            <div class="card-body spread">
+                <div>
+                    <div class="muted small">Nåværende kunde</div>
+                    {% if current %}
+                    <div class="num" style="font-size: 1.15rem">{{ current.name }}</div>
+                    {% else %}
+                    <span class="status s-warn"><span class="dot"></span>Fant ikke kunden i Fiken (#{{ current_id }})</span>
+                    {% endif %}
+                </div>
+                <form method="post" action="/installations/{{ installation.Id }}/customer/delete">
+                    <input type="hidden" name="year" value="{{ year }}" />
+                    <input type="hidden" name="month" value="{{ month }}" />
+                    <input type="hidden" name="nok_per_kwh" value="{{ nok_per_kwh }}" />
+                    <button class="btn btn-ghost btn-sm" type="submit">Fjern kobling</button>
+                </form>
+            </div>
+        </section>
+        {% endif %}
+
+        <form class="row" method="get" action="/installations/{{ installation.Id }}/customer" role="search">
+            <input type="hidden" name="year" value="{{ year }}" />
+            <input type="hidden" name="month" value="{{ month }}" />
+            {% if nok_per_kwh %}<input type="hidden" name="nok_per_kwh" value="{{ nok_per_kwh }}" />{% endif %}
+            <input class="input" type="search" name="q" value="{{ q }}" placeholder="Søk på navn, kundenummer, org.nr. eller e-post"
+                aria-label="Søk etter kunde" autofocus />
+            <button class="btn btn-fill btn-sm" type="submit">Søk</button>
+        </form>
+
+        <div class="table-root">
+            <div class="table-scroll">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Kunde</th>
+                            <th>Kundenr.</th>
+                            <th>Org.nr.</th>
+                            <th class="col-actions"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for c in customers %}
+                        <tr>
+                            <td>
+                                <div style="font-weight: 600">{{ c.name }}</div>
+                                {% if c.email %}<div class="muted small">{{ c.email }}</div>{% endif %}
+                            </td>
+                            <td class="nowrap">{{ c.customerNumber or "–" }}</td>
+                            <td class="nowrap">{{ c.organizationNumber or "–" }}</td>
+                            <td class="col-actions">
+                                {% if c.contactId == current_id %}
+                                <span class="tag">Valgt</span>
+                                {% else %}
+                                <form method="post" action="/installations/{{ installation.Id }}/customer">
+                                    <input type="hidden" name="contact_id" value="{{ c.contactId }}" />
+                                    <input type="hidden" name="year" value="{{ year }}" />
+                                    <input type="hidden" name="month" value="{{ month }}" />
+                                    <input type="hidden" name="nok_per_kwh" value="{{ nok_per_kwh }}" />
+                                    <button class="btn btn-fill btn-sm" type="submit">Velg</button>
+                                </form>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td class="table-empty" colspan="4">
+                                {% if q %}Ingen kunder i Fiken matcher «{{ q }}».{% else %}Fant ingen aktive kunder i Fiken.{% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <p class="muted small" style="margin: 0">
+            Kundeopplysningene hentes direkte fra Fiken og lagres ikke her. Tjenesten lagrer bare Fikens kunde-id.
+        </p>
+    </div>
+</div>
+{% endblock %}

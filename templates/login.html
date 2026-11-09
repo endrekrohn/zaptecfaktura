@@ -1,201 +1,26 @@
-{% extends "base.html" %} {% block content %}
-<style>
-    body {
-        margin: 0;
-        padding: 0;
-        min-height: 100vh;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background-color: #f3f4f6;
-        font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    }
-
-    .login-container {
-        max-width: 400px;
-        width: 100%;
-        padding: 40px;
-        background: #ffffff;
-        border-radius: 8px;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-        position: relative;
-    }
-
-    .login-container::before {
-        content: "";
-        position: absolute;
-        top: -50%;
-        left: -50%;
-        width: 200%;
-        height: 200%;
-        background: radial-gradient(circle,
-                rgba(255, 255, 255, 0.1) 0%,
-                rgba(255, 255, 255, 0) 70%);
-        z-index: -1;
-    }
-
-    .login-container h2 {
-        text-align: center;
-        margin-bottom: 30px;
-        color: #111827;
-        font-weight: 700;
-    }
-
-    .login-container h2::after {
-        content: "";
-        display: block;
-        width: 40px;
-        height: 3px;
-        background: #6366f1;
-        margin: 15px auto 0;
-        border-radius: 2px;
-    }
-
-    .form-group {
-        margin-bottom: 25px;
-        position: relative;
-    }
-
-    .form-group label {
-        display: block;
-        margin-bottom: 6px;
-        font-size: 14px;
-        font-weight: 500;
-        color: #374151;
-    }
-
-    .form-group input {
-        width: 100%;
-        padding: 12px;
-        border: 1px solid #d1d5db;
-        border-radius: 6px;
-        font-size: 16px;
-        box-sizing: border-box;
-        transition: border-color 0.2s, box-shadow 0.2s;
-        background: #ffffff;
-        color: #111827;
-    }
-
-    .form-group input:focus {
-        outline: none;
-        border-color: #6366f1;
-        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
-    }
-
-    .form-group input::placeholder {
-        color: #aaa;
-    }
-
-    .submit-btn {
-        width: 100%;
-        background: #6366f1;
-        color: white;
-        padding: 12px;
-        border: none;
-        border-radius: 6px;
-        cursor: pointer;
-        font-size: 16px;
-        font-weight: 600;
-        transition: background 0.2s, transform 0.1s;
-        margin-top: 10px;
-    }
-
-    .submit-btn:hover {
-        background: #4f46e5;
-    }
-
-    .submit-btn:active {
-        transform: scale(0.98);
-    }
-
-    .error {
-        background-color: #fee2e2;
-        color: #dc2626;
-        padding: 12px;
-        border-radius: 6px;
-        margin-bottom: 20px;
-        text-align: center;
-        font-size: 14px;
-        border: 1px solid #fecaca;
-    }
-
-    .login-header h1 {
-        color: #111827;
-        font-size: 2rem;
-        margin-bottom: 5px;
-    }
-
-    .login-header p {
-        color: #6b7280;
-        font-size: 0.875rem;
-    }
-
-    @keyframes fadeInUp {
-        from {
-            opacity: 0;
-            transform: translateY(30px);
-        }
-
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
-    }
-
-    @keyframes shake {
-
-        0%,
-        100% {
-            transform: translateX(0);
-        }
-
-        20%,
-        60% {
-            transform: translateX(-5px);
-        }
-
-        40%,
-        80% {
-            transform: translateX(5px);
-        }
-    }
-
-    @keyframes pulse {
-        0% {
-            transform: scale(1);
-        }
-
-        50% {
-            transform: scale(1.1);
-        }
-
-        100% {
-            transform: scale(1);
-        }
-    }
-</style>
-
-<div class="login-container">
-    <div class="login-header">
-        <h1>⚡ Zaptec</h1>
-        <p>Logg inn for å fortsatte</p>
+{% extends "base.html" %}
+{% block title %}Logg inn · Zaptec-faktura{% endblock %}
+{% block content %}
+<div class="page" style="max-width: 420px">
+    <div class="stack">
+        <h1>Logg inn</h1>
+        <p class="muted" style="margin: 0">Bruk e-post og passord fra Zaptec-kontoen din.</p>
+        {% if error %}
+        <div class="alert alert-err"><span class="dot"></span>{{ error }}</div>
+        {% endif %}
+        <form class="stack" method="post" action="/login">
+            <div class="field">
+                <label for="username">E-post</label>
+                <input id="username" class="input" type="email" name="username" value="{{ username or '' }}"
+                    autocomplete="username" required autofocus />
+            </div>
+            <div class="field">
+                <label for="password">Passord</label>
+                <input id="password" class="input" type="password" name="password" autocomplete="current-password"
+                    required />
+            </div>
+            <button class="btn btn-fill" type="submit">Logg inn</button>
+        </form>
     </div>
-
-    {% if error %}
-    <p class="error">{{ error }}</p>
-    {% endif %}
-
-    <form method="post" action="/login">
-        <div class="form-group">
-            <label>E-post:</label>
-            <input type="text" name="username" required placeholder="Skriv inn e-postadresse..." />
-        </div>
-        <div class="form-group">
-            <label>Passord:</label>
-            <input type="password" name="password" required placeholder="Skriv inn passord..." />
-        </div>
-        <button type="submit" class="submit-btn">Logg inn</button>
-    </form>
 </div>
-
 {% endblock %}

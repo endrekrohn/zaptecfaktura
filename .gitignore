@@ -11,3 +11,7 @@ wheels/
 
 # Extra data folder
 data/
+# Local secrets and databases
+.env
+*.db
+.DS_Store

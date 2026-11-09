@@ -1,7 +1,7 @@
 [project]
 name = "zaptecfaktura"
 version = "0.1.0"
-description = "Add your description here"
+description = "Monthly charging usage from Zaptec as invoice drafts in Fiken"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -12,3 +12,12 @@ dependencies = [
     "reportlab>=4.4.4",
     "xlsxwriter>=3.2.9",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
