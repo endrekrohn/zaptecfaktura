@@ -83,7 +83,6 @@ Kopier `.env.example` til `.env` og fyll inn:
 | `SECRET_KEY` | Krypterer lagrede Fiken-token. Bytter du den, må alle koble til Fiken på nytt. |
 | `FIKEN_CLIENT_ID` / `FIKEN_CLIENT_SECRET` | Fra Fiken-appen. |
 | `FIKEN_REDIRECT_URI` | Må være registrert på appen, f.eks. `https://<domene>/fiken/callback`. |
-| `FIKEN_VAT_TYPE` / `FIKEN_INCOME_ACCOUNT` / `FIKEN_DAYS_UNTIL_DUE` | Standardverdier til foretaket har lagret egne fakturainnstillinger. Standard `HIGH` / `3000` / 14. |
 | `DATABASE_PATH` | SQLite-fil. Standard `data/zaptecfaktura.db`, i Docker `/data/zaptecfaktura.db`. |
 
 Uten Fiken-variablene fungerer tjenesten som før: grunnlaget kan lastes ned som

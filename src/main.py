@@ -231,19 +231,12 @@ def require_company(user: str) -> tuple[FikenAPI, str]:
 
 
 def invoice_settings_for(company_slug: str) -> tuple[InvoiceSettings, bool]:
-    """The company's invoice settings, or the server defaults. Also returns
+    """The company's invoice settings, or the defaults from `InvoiceSettings`. Also returns
     whether the company has saved its own settings."""
     row = database.get_invoice_settings(company_slug)
     if row:
         return InvoiceSettings(row["income_account"], row["vat_type"], row["days_until_due"]), True
-    return (
-        InvoiceSettings(
-            settings.fiken_income_account,
-            settings.fiken_vat_type,
-            settings.fiken_days_until_due,
-        ),
-        False,
-    )
+    return InvoiceSettings(), False
 
 
 def overview_url(year: int, month: int, nok_per_kwh: str | None = None) -> str:

@@ -41,11 +41,6 @@ class Settings:
     # Must match a redirect URI registered on the Fiken app, e.g.
     # https://faktura.example.no/fiken/callback
     fiken_redirect_uri: str = ""
-    # Defaults for invoice settings until they are set per company under
-    # /fiken/innstillinger.
-    fiken_days_until_due: int = 14
-    fiken_vat_type: str = "HIGH"
-    fiken_income_account: str = "3000"
 
     @property
     def fiken_enabled(self) -> bool:
@@ -74,13 +69,6 @@ def load_settings() -> Settings:
         fiken_client_id=env.get("FIKEN_CLIENT_ID", ""),
         fiken_client_secret=env.get("FIKEN_CLIENT_SECRET", ""),
         fiken_redirect_uri=env.get("FIKEN_REDIRECT_URI", ""),
-        fiken_days_until_due=int(
-            env.get("FIKEN_DAYS_UNTIL_DUE", Settings.fiken_days_until_due)
-        ),
-        fiken_vat_type=env.get("FIKEN_VAT_TYPE", Settings.fiken_vat_type),
-        fiken_income_account=env.get(
-            "FIKEN_INCOME_ACCOUNT", Settings.fiken_income_account
-        ),
     )
 
 
