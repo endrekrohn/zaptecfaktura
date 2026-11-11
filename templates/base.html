@@ -19,25 +19,24 @@
             <div class="inner">
                 <a class="wordmark" href="/">zaptecfaktura</a>
                 {% if user %}
-                <div class="row">
-                    <span class="muted small user-email">{{ user }}</span>
-                    {% if fiken_configured() %}
-                    <div class="menu" data-menu>
-                        <button class="btn btn-ghost btn-sm" type="button" aria-haspopup="menu"
-                            aria-expanded="false" data-menu-trigger>Fiken <span aria-hidden="true">▾</span></button>
-                        <div class="menu-panel" role="menu" hidden data-menu-panel>
-                            <a class="menu-item" role="menuitem" href="/fiken"><span
-                                    class="menu-item-text">Tilkobling</span><span class="menu-arrow">›</span></a>
-                            {% if fiken_company_selected(user) %}
-                            <a class="menu-item" role="menuitem" href="/fiken/innstillinger"><span
-                                    class="menu-item-text">Fakturainnstillinger</span><span class="menu-arrow">›</span></a>
-                            {% endif %}
-                        </div>
+                <div class="menu" data-menu>
+                    <button class="btn btn-ghost btn-sm" type="button" aria-haspopup="menu"
+                        aria-expanded="false" data-menu-trigger>Meny <span aria-hidden="true">▾</span></button>
+                    <div class="menu-panel" role="menu" hidden data-menu-panel>
+                        {% if fiken_configured() %}
+                        <a class="menu-item" role="menuitem" href="/fiken"><span
+                                class="menu-item-text">Tilkobling</span><span class="menu-arrow">›</span></a>
+                        {% if fiken_company_selected(user) %}
+                        <a class="menu-item" role="menuitem" href="/fiken/innstillinger"><span
+                                class="menu-item-text">Fakturainnstillinger</span><span class="menu-arrow">›</span></a>
+                        {% endif %}
+                        <div class="menu-sep" role="separator"></div>
+                        {% endif %}
+                        <form method="post" action="/logout">
+                            <button class="menu-item" role="menuitem" type="submit"><span
+                                    class="menu-item-text">Logg ut</span></button>
+                        </form>
                     </div>
-                    {% endif %}
-                    <form method="post" action="/logout">
-                        <button class="btn btn-ghost btn-sm" type="submit">Logg ut</button>
-                    </form>
                 </div>
                 {% endif %}
             </div>

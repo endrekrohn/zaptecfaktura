@@ -177,8 +177,8 @@ def test_connect_fiken_with_single_company(make_client, fake_fiken, tmp_path):
         assert "access-1" not in raw[0] and "refresh-1" not in raw[1]
 
         page = client.get("/?year=2026&month=10")
-        assert "Fiken: " in page.text and "Test AS" in page.text
-        assert "Velg kunde" in page.text
+        assert "Velg" in page.text
+        assert "Test AS" in client.get("/fiken").text
 
 
 def test_connect_with_several_companies_shows_picker(make_client, fake_fiken):
@@ -295,7 +295,8 @@ def test_map_customer_and_create_drafts(make_client, fake_fiken):
         assert len(draft["attachments"]) == 1
 
         page = client.get(response.headers["location"])
-        assert "Utkast opprettet" in page.text and "Ola Nordmann" in page.text
+        assert f">#{drafts['inst-a'].fiken_draft_id}</a>" in page.text and "Utkast opprettet" not in page.text
+        assert "Ola Nordmann" in page.text and "Ingen forbruk" not in page.text
 
 
 def test_drafts_require_connection(make_client):
@@ -442,7 +443,8 @@ def test_fiken_menu_shows_settings_once_connected(make_client, fake_fiken):
     with make_client() as client:
         login(client)
         page = client.get("/?year=2026&month=10")
-        assert 'data-menu-trigger' in page.text and 'href="/fiken/innstillinger"' not in page.text
+        assert 'data-menu-trigger' in page.text and "Logg ut" in page.text
+        assert 'href="/fiken/innstillinger"' not in page.text
         connect_fiken(client, fake_fiken)
         page = client.get("/?year=2026&month=10")
         assert 'href="/fiken/innstillinger"' in page.text
@@ -468,9 +470,6 @@ def test_save_invoice_settings_and_use_them(make_client, fake_fiken):
         page = client.get("/fiken/innstillinger?saved=1")
         assert '<option value="3600" selected>' in page.text
         assert '<option value="EXEMPT" selected>' in page.text
-
-        overview = client.get("/?year=2026&month=10")
-        assert "inntektskonto 3600 ·" in overview.text and "Fritatt for mva ·" in overview.text
 
         client.post("/installations/inst-a/customer", data={"contact_id": 11, "year": 2026, "month": 10})
         client.post("/drafts", data={"year": 2026, "month": 10, "nok_per_kwh": "1.5"})
@@ -507,5 +506,4 @@ def test_defaults_are_used_until_settings_are_saved(make_client, fake_fiken):
         login(client)
         connect_fiken(client, fake_fiken)
         page = client.get("/fiken/innstillinger")
-        assert "Ikke lagret ennå" in page.text
         assert '<option value="3000" selected>' in page.text

@@ -232,7 +232,7 @@ a:hover {
 .card-foot {
 	display: flex;
 	align-items: center;
-	justify-content: space-between;
+	justify-content: end;
 	padding: 13px 18px;
 }
 .divider-dashed {
@@ -484,6 +484,9 @@ select.input:hover {
 	justify-content: space-between;
 	gap: 12px;
 	flex-wrap: wrap;
+}
+.heading-wrapper-spaced {
+	padding-top: 2rem;
 }
 
 .grid-3 {

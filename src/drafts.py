@@ -31,7 +31,7 @@ STATUSES: dict[str, tuple[str, str]] = {
     "created": ("Utkast opprettet", "s-ok"),
     "exists": ("Utkast finnes i Fiken", "s-ok"),
     "invoiced": ("Fakturert i Fiken", "s-ok"),
-    "skipped": ("Ingen forbruk", ""),
+    "skipped": ("-", ""),
     "missing_customer": ("Mangler kunde", "s-warn"),
     "failed": ("Feilet", "s-err"),
 }

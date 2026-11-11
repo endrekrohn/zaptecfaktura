@@ -4,9 +4,8 @@
 <div class="page" style="max-width: none">
     <div class="container container-sm stack">
         <p style="margin: 0"><a href="/">‹ Tilbake til oversikten</a></p>
-        <div class="stack" style="gap: 4px">
+        <div class="stack">
             <h1>Fiken</h1>
-            <p class="muted" style="margin: 0">Koble til Fiken for å lage fakturautkast direkte i regnskapet ditt.</p>
         </div>
 
         {% if error %}
@@ -15,10 +14,8 @@
 
         <section class="card">
             {% if connection and connection.company_slug %}
-            <div class="card-body stack" style="gap: 6px">
-                <span class="status s-ok"><span class="dot"></span>Tilkoblet</span>
+            <div class="card-body stack">
                 <div class="num" style="font-size: 1.3rem">{{ connection.company_name }}</div>
-                <div class="muted small">Fakturautkast lages i dette foretaket.</div>
             </div>
             <div class="divider-dashed"></div>
             <div class="card-foot" style="gap: 10px; flex-wrap: wrap; justify-content: flex-start">
@@ -58,9 +55,6 @@
             </div>
             {% endif %}
         </section>
-        <p class="muted small" style="margin: 0">
-            Du kan også trekke tilbake tilgangen i Fiken under Rediger konto → Sikkerhet → Apper du har gitt tilgang til.
-        </p>
     </div>
 </div>
 {% endblock %}

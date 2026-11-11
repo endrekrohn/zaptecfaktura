@@ -4,20 +4,13 @@
 <div class="page" style="max-width: none">
     <div class="container container-sm stack">
         <p style="margin: 0"><a href="/">‹ Tilbake til oversikten</a></p>
-        <div class="stack" style="gap: 4px">
-            <h1>Fakturainnstillinger</h1>
-            <p class="muted" style="margin: 0">Standardverdier for fakturautkast i <strong>{{ company_name }}</strong>.</p>
-        </div>
+        <h1>Fakturainnstillinger ({{ company_name }})</h1>
 
         {% if message %}
         <div class="alert alert-ok"><span class="dot"></span>{{ message }}</div>
         {% endif %}
         {% if error %}
         <div class="alert alert-err"><span class="dot"></span>{{ error }}</div>
-        {% endif %}
-        {% if not saved and not message %}
-        <div class="alert"><span class="dot" style="background: var(--amber)"></span>Ikke lagret ennå. Utkast lages med
-            standardverdiene under til du lagrer.</div>
         {% endif %}
 
         <form class="card" method="post" action="/fiken/innstillinger">
@@ -35,7 +28,6 @@
                         <option value="" selected disabled>Velg konto</option>
                         {% endif %}
                     </select>
-                    <span class="muted small">Kontoen salget bokføres på. Viser salgskontoene (3000–3999) i Fiken.</span>
                 </div>
                 <div class="field">
                     <label for="vat_type">Mva</label>
@@ -44,7 +36,6 @@
                         <option value="{{ value }}" {% if value == current.vat_type %}selected{% endif %}>{{ label }}</option>
                         {% endfor %}
                     </select>
-                    <span class="muted small">Mva-typen må passe til kontoen, ellers avviser Fiken utkastet.</span>
                 </div>
                 <div class="field" style="max-width: 220px">
                     <label for="days_until_due">Forfall</label>
@@ -57,7 +48,6 @@
             </div>
             <div class="divider-dashed"></div>
             <div class="card-foot">
-                <span class="muted small">Gjelder nye utkast. Utkast som finnes, endres ikke.</span>
                 <button class="btn btn-fill" type="submit">Lagre</button>
             </div>
         </form>

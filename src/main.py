@@ -134,7 +134,6 @@ def fiken_company_selected(user: str | None) -> bool:
 
 
 templates.env.globals["fiken_company_selected"] = fiken_company_selected
-templates.env.globals["vat_label"] = lambda vat: SALES_VAT_TYPES.get(vat, vat)
 
 
 class PageError(Exception):
@@ -230,13 +229,12 @@ def require_company(user: str) -> tuple[FikenAPI, str]:
     return fiken_client(user, connection.company_slug), connection.company_slug
 
 
-def invoice_settings_for(company_slug: str) -> tuple[InvoiceSettings, bool]:
-    """The company's invoice settings, or the defaults from `InvoiceSettings`. Also returns
-    whether the company has saved its own settings."""
+def invoice_settings_for(company_slug: str) -> InvoiceSettings:
+    """The company's invoice settings, or the defaults from `InvoiceSettings`."""
     row = database.get_invoice_settings(company_slug)
     if row:
-        return InvoiceSettings(row["income_account"], row["vat_type"], row["days_until_due"]), True
-    return InvoiceSettings(), False
+        return InvoiceSettings(row["income_account"], row["vat_type"], row["days_until_due"])
+    return InvoiceSettings()
 
 
 def overview_url(year: int, month: int, nok_per_kwh: str | None = None) -> str:
@@ -401,7 +399,6 @@ async def overview(
 
     # Only count a customer as ready when Fiken still knows it.
     ready = sum(1 for r in rows if r["total"].kwh > 0 and r["customer"])
-    missing = sum(1 for r in rows if r["total"].kwh > 0 and not r["customer"])
     pending = any(r["draft"] and r["draft"]["status"] == "pending" for r in rows)
 
     return templates.TemplateResponse(
@@ -414,13 +411,10 @@ async def overview(
             "nok_per_kwh": nok_per_kwh or "",
             "rows": rows,
             "ready": ready,
-            "missing": missing,
             "pending": pending,
             "fiken_enabled": settings.fiken_enabled,
             # Connected with a company chosen: drafts can be created.
             "fiken_ready": bool(company_slug),
-            "fiken_company": connection.company_name if company_slug else None,
-            "invoice_settings": invoice_settings_for(company_slug)[0] if company_slug else None,
             "fiken_error": fiken_error,
             "years": range(date.today().year, 2019, -1),
         },
@@ -549,7 +543,7 @@ async def create_drafts(
         background_tasks.add_task(
             run_draft_job,
             fiken,
-            invoice_settings_for(company_slug)[0],
+            invoice_settings_for(company_slug),
             company_slug,
             items,
             load_usage,
@@ -815,7 +809,6 @@ def _render_invoice_settings(
     user: str,
     connection: database.FikenConnection,
     current: InvoiceSettings,
-    saved: bool,
     accounts: list[dict],
     message: str | None = None,
     error: str | None = None,
@@ -828,7 +821,6 @@ def _render_invoice_settings(
             "user": user,
             "company_name": connection.company_name,
             "current": current,
-            "saved": saved,
             "accounts": accounts,
             "vat_types": SALES_VAT_TYPES,
             "message": message,
@@ -847,14 +839,14 @@ async def invoice_settings_page(
 ):
     _, company_slug = require_company(user)
     connection = database.get_fiken_connection(user)
-    current, saved = invoice_settings_for(company_slug)
+    current = invoice_settings_for(company_slug)
     message = None
     if welcome:
         message = "Fiken er tilkoblet. Velg standardinnstillingene for fakturautkastene."
     elif saved_now:
         message = "Innstillingene er lagret. De gjelder for nye utkast."
     accounts = await load_income_accounts(user, company_slug)
-    return _render_invoice_settings(request, user, connection, current, saved, accounts, message)
+    return _render_invoice_settings(request, user, connection, current, accounts, message)
 
 
 @app.post("/fiken/innstillinger", response_class=HTMLResponse)
@@ -878,9 +870,8 @@ async def save_invoice_settings(
     elif not 0 <= submitted.days_until_due <= 365:
         error = "Forfall må være mellom 0 og 365 dager."
     if error:
-        saved = database.get_invoice_settings(company_slug) is not None
         return _render_invoice_settings(
-            request, user, connection, submitted, saved, accounts, error=error, status_code=400
+            request, user, connection, submitted, accounts, error=error, status_code=400
         )
 
     database.set_invoice_settings(
