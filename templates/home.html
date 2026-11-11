@@ -144,7 +144,7 @@
                                 <span class="status s-warn"><span class="dot"></span>Fant ikke kunden (#{{ row.contact_id }})</span>
                                 <div><a class="small" href="/installations/{{ u.installation_id }}/customer?{{ qs }}">Velg på nytt</a></div>
                                 {% else %}
-                                <a href="/installations/{{ u.installation_id }}/customer?{{ qs }}">Velg kunde</a>
+                                <a href="/installations/{{ u.installation_id }}/customer?{{ qs }}">Velg</a>
                                 {% endif %}
                             </td>
                             <td data-draft-cell="{{ u.installation_id }}">{% if not row.draft and not u.kwh %}-{% else %}{{ draft_cell(row.draft) }}{% endif %}</td>
