@@ -503,9 +503,9 @@ def test_invalid_invoice_settings_are_rejected(make_client, fake_fiken, data, me
 
 
 def test_defaults_are_used_until_settings_are_saved(make_client, fake_fiken):
-    with make_client(fiken_income_account="3100", fiken_vat_type="NONE") as client:
+    with make_client() as client:
         login(client)
         connect_fiken(client, fake_fiken)
         page = client.get("/fiken/innstillinger")
         assert "Ikke lagret ennå" in page.text
-        assert '<option value="3100" selected>' in page.text
+        assert '<option value="3000" selected>' in page.text

@@ -55,11 +55,12 @@ INCOME_ACCOUNT_RANGE = (3000, 3999)
 
 @dataclass(frozen=True)
 class InvoiceSettings:
-    """Per-company defaults for the invoice line, set under /fiken/innstillinger."""
+    """Per-company settings for the invoice line, set under /fiken/innstillinger.
+    The defaults apply until a company saves its own."""
 
-    income_account: str
-    vat_type: str
-    days_until_due: int
+    income_account: str = "3000"
+    vat_type: str = "HIGH"
+    days_until_due: int = 14
 
 
 # Statuses where the draft exists in Fiken and can be opened there.
